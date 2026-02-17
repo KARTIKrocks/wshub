@@ -1,0 +1,373 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
+
+	websocket "github.com/KARTIKrocks/websocket"
+)
+
+// Message types
+const (
+	MsgTypeChat     = "chat"
+	MsgTypeJoin     = "join"
+	MsgTypeLeave    = "leave"
+	MsgTypeRooms    = "rooms"
+	MsgTypeUserList = "users"
+)
+
+// ChatMessage represents a chat message
+type ChatMessage struct {
+	Type    string `json:"type"`
+	Room    string `json:"room,omitempty"`
+	From    string `json:"from,omitempty"`
+	Message string `json:"message,omitempty"`
+	Users   []User `json:"users,omitempty"`
+	Rooms   []Room `json:"rooms,omitempty"`
+}
+
+// User represents a connected user
+type User struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+}
+
+// Room represents a chat room
+type Room struct {
+	Name      string `json:"name"`
+	UserCount int    `json:"userCount"`
+}
+
+// ChatServer wraps the WebSocket hub with chat-specific logic
+type ChatServer struct {
+	hub       *websocket.Hub
+	usernames map[string]string // clientID -> username
+	mu        sync.RWMutex
+}
+
+// NewChatServer creates a new chat server
+func NewChatServer() *ChatServer {
+	config := websocket.DefaultConfig().
+		WithMaxMessageSize(1024 * 1024).
+		WithCompression(true).
+		WithCheckOrigin(websocket.AllowAllOrigins)
+
+	hub := websocket.NewHub(config)
+
+	// Set limits
+	limits := websocket.DefaultLimits().
+		WithMaxConnections(10000).
+		WithMaxConnectionsPerUser(5).
+		WithMaxRoomsPerClient(10).
+		WithMaxClientsPerRoom(100)
+	hub.SetLimits(limits)
+
+	server := &ChatServer{
+		hub:       hub,
+		usernames: make(map[string]string),
+	}
+
+	// Set up hooks
+	server.setupHooks()
+
+	// Set up message handler with middleware
+	server.setupMessageHandler()
+
+	return server
+}
+
+func (s *ChatServer) setupHooks() {
+	s.hub.SetHooks(websocket.Hooks{
+		BeforeConnect: func(r *http.Request) error {
+			// You could add authentication here
+			// For demo, we accept all connections
+			return nil
+		},
+
+		AfterConnect: func(client *websocket.Client) {
+			log.Printf("Client connected: %s", client.ID)
+
+			// Send welcome message
+			welcome := ChatMessage{
+				Type:    "welcome",
+				Message: "Welcome to the chat server!",
+			}
+			data, _ := json.Marshal(welcome)
+			client.Send(data)
+		},
+
+		AfterDisconnect: func(client *websocket.Client) {
+			log.Printf("Client disconnected: %s", client.ID)
+
+			// Remove username
+			s.mu.Lock()
+			username := s.usernames[client.ID]
+			delete(s.usernames, client.ID)
+			s.mu.Unlock()
+
+			// Notify rooms
+			for _, room := range client.Rooms() {
+				s.notifyRoomUsers(room, fmt.Sprintf("%s left the room", username))
+			}
+		},
+
+		AfterRoomJoin: func(client *websocket.Client, room string) {
+			s.mu.RLock()
+			username := s.usernames[client.ID]
+			s.mu.RUnlock()
+
+			// Notify room members
+			s.notifyRoomUsers(room, fmt.Sprintf("%s joined the room", username))
+
+			// Send room user list to new member
+			s.sendRoomUsers(client, room)
+		},
+
+		AfterRoomLeave: func(client *websocket.Client, room string) {
+			s.mu.RLock()
+			username := s.usernames[client.ID]
+			s.mu.RUnlock()
+
+			// Notify room members
+			s.notifyRoomUsers(room, fmt.Sprintf("%s left the room", username))
+		},
+
+		OnError: func(client *websocket.Client, err error) {
+			log.Printf("Client error %s: %v", client.ID, err)
+		},
+	})
+}
+
+func (s *ChatServer) setupMessageHandler() {
+	// Create middleware chain
+	chain := websocket.NewMiddlewareChain(s.handleMessage).
+		Use(websocket.RecoveryMiddleware(&SimpleLogger{})).
+		Use(websocket.LoggingMiddleware(&SimpleLogger{}))
+
+	s.hub.OnMessage(func(client *websocket.Client, msg *websocket.Message) error {
+		return chain.Execute(client, msg)
+	})
+}
+
+func (s *ChatServer) handleMessage(client *websocket.Client, msg *websocket.Message) error {
+	var chatMsg ChatMessage
+	if err := json.Unmarshal(msg.Data, &chatMsg); err != nil {
+		return websocket.ErrInvalidMessage
+	}
+
+	switch chatMsg.Type {
+	case "setUsername":
+		return s.handleSetUsername(client, chatMsg)
+	case MsgTypeJoin:
+		return s.handleJoinRoom(client, chatMsg)
+	case MsgTypeLeave:
+		return s.handleLeaveRoom(client, chatMsg)
+	case MsgTypeChat:
+		return s.handleChatMessage(client, chatMsg)
+	case MsgTypeRooms:
+		return s.handleGetRooms(client)
+	default:
+		return websocket.ErrInvalidMessage
+	}
+}
+
+func (s *ChatServer) handleSetUsername(client *websocket.Client, msg ChatMessage) error {
+	s.mu.Lock()
+	s.usernames[client.ID] = msg.Message
+	s.mu.Unlock()
+
+	client.SetMetadata("username", msg.Message)
+
+	response := ChatMessage{
+		Type:    "usernameSet",
+		Message: msg.Message,
+	}
+	data, _ := json.Marshal(response)
+	return client.Send(data)
+}
+
+func (s *ChatServer) handleJoinRoom(client *websocket.Client, msg ChatMessage) error {
+	if err := s.hub.JoinRoom(client, msg.Room); err != nil {
+		return err
+	}
+
+	response := ChatMessage{
+		Type:    "joined",
+		Room:    msg.Room,
+		Message: fmt.Sprintf("Joined room: %s", msg.Room),
+	}
+	data, _ := json.Marshal(response)
+	return client.Send(data)
+}
+
+func (s *ChatServer) handleLeaveRoom(client *websocket.Client, msg ChatMessage) error {
+	if err := s.hub.LeaveRoom(client, msg.Room); err != nil {
+		return err
+	}
+
+	response := ChatMessage{
+		Type:    "left",
+		Room:    msg.Room,
+		Message: fmt.Sprintf("Left room: %s", msg.Room),
+	}
+	data, _ := json.Marshal(response)
+	return client.Send(data)
+}
+
+func (s *ChatServer) handleChatMessage(client *websocket.Client, msg ChatMessage) error {
+	s.mu.RLock()
+	username := s.usernames[client.ID]
+	s.mu.RUnlock()
+
+	broadcast := ChatMessage{
+		Type:    MsgTypeChat,
+		Room:    msg.Room,
+		From:    username,
+		Message: msg.Message,
+	}
+
+	data, _ := json.Marshal(broadcast)
+
+	if msg.Room != "" {
+		return s.hub.BroadcastToRoom(msg.Room, data)
+	}
+
+	s.hub.Broadcast(data)
+	return nil
+}
+
+func (s *ChatServer) handleGetRooms(client *websocket.Client) error {
+	roomNames := s.hub.RoomNames()
+	rooms := make([]Room, 0, len(roomNames))
+
+	for _, name := range roomNames {
+		rooms = append(rooms, Room{
+			Name:      name,
+			UserCount: s.hub.RoomCount(name),
+		})
+	}
+
+	response := ChatMessage{
+		Type:  MsgTypeRooms,
+		Rooms: rooms,
+	}
+
+	data, _ := json.Marshal(response)
+	return client.Send(data)
+}
+
+func (s *ChatServer) notifyRoomUsers(room, message string) {
+	notification := ChatMessage{
+		Type:    "notification",
+		Room:    room,
+		Message: message,
+	}
+	data, _ := json.Marshal(notification)
+	s.hub.BroadcastToRoom(room, data)
+}
+
+func (s *ChatServer) sendRoomUsers(client *websocket.Client, room string) {
+	clients := s.hub.RoomClients(room)
+	users := make([]User, 0, len(clients))
+
+	s.mu.RLock()
+	for _, c := range clients {
+		users = append(users, User{
+			ID:       c.ID,
+			Username: s.usernames[c.ID],
+		})
+	}
+	s.mu.RUnlock()
+
+	msg := ChatMessage{
+		Type:  MsgTypeUserList,
+		Room:  room,
+		Users: users,
+	}
+
+	data, _ := json.Marshal(msg)
+	client.Send(data)
+}
+
+func (s *ChatServer) Start() {
+	go s.hub.Run()
+}
+
+func (s *ChatServer) Shutdown(ctx context.Context) error {
+	return s.hub.Shutdown(ctx)
+}
+
+func (s *ChatServer) HandleHTTP() http.HandlerFunc {
+	return s.hub.HandleHTTP()
+}
+
+// SimpleLogger implements websocket.Logger interface
+type SimpleLogger struct{}
+
+func (l *SimpleLogger) Debug(msg string, args ...any) {
+	log.Printf("[DEBUG] "+msg, args...)
+}
+
+func (l *SimpleLogger) Info(msg string, args ...any) {
+	log.Printf("[INFO] "+msg, args...)
+}
+
+func (l *SimpleLogger) Warn(msg string, args ...any) {
+	log.Printf("[WARN] "+msg, args...)
+}
+
+func (l *SimpleLogger) Error(msg string, args ...any) {
+	log.Printf("[ERROR] "+msg, args...)
+}
+
+func main() {
+	// Create chat server
+	chatServer := NewChatServer()
+	chatServer.Start()
+
+	// Set up HTTP routes
+	http.HandleFunc("/ws", chatServer.HandleHTTP())
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "chat.html")
+	})
+
+	// Start HTTP server
+	server := &http.Server{Addr: ":8080"}
+	go func() {
+		log.Println("Chat server starting on :8080")
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
+	}()
+
+	// Wait for interrupt signal
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down server...")
+
+	// Graceful shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Shutdown HTTP server
+	if err := server.Shutdown(ctx); err != nil {
+		log.Printf("HTTP server shutdown error: %v", err)
+	}
+
+	// Shutdown chat server
+	if err := chatServer.Shutdown(ctx); err != nil {
+		log.Printf("Chat server shutdown error: %v", err)
+	}
+
+	log.Println("Server stopped")
+}
