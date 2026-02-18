@@ -132,37 +132,49 @@ func NewChatServer() *ChatServer {
 				log.Printf("Client error %s: %v", client.ID, err)
 			},
 		}),
-		wshub.WithMessageHandler(func(client *wshub.Client, msg *wshub.Message) error {
-			// Create middleware chain
-			chain := wshub.NewMiddlewareChain(server.handleMessage).
-				Use(wshub.RecoveryMiddleware(&SimpleLogger{})).
-				Use(wshub.LoggingMiddleware(&SimpleLogger{}))
-			return chain.Execute(client, msg)
-		}),
+		wshub.WithMessageHandler(server.buildRouter()),
 	)
 
 	return server
 }
 
-func (s *ChatServer) handleMessage(client *wshub.Client, msg *wshub.Message) error {
-	var chatMsg ChatMessage
-	if err := json.Unmarshal(msg.Data, &chatMsg); err != nil {
-		return wshub.ErrInvalidMessage
-	}
+// buildRouter wires up per-event handlers and wraps them with middleware.
+func (s *ChatServer) buildRouter() wshub.HandlerFunc {
+	logger := &SimpleLogger{}
 
-	switch chatMsg.Type {
-	case "setUsername":
-		return s.handleSetUsername(client, chatMsg)
-	case MsgTypeJoin:
-		return s.handleJoinRoom(client, chatMsg)
-	case MsgTypeLeave:
-		return s.handleLeaveRoom(client, chatMsg)
-	case MsgTypeChat:
-		return s.handleChatMessage(client, chatMsg)
-	case MsgTypeRooms:
-		return s.handleGetRooms(client)
-	default:
-		return wshub.ErrInvalidMessage
+	// Extractor reads only the "type" field — no assumptions about the rest.
+	router := wshub.NewRouter(func(msg *wshub.Message) string {
+		var env struct {
+			Type string `json:"type"`
+		}
+		json.Unmarshal(msg.Data, &env)
+		return env.Type
+	})
+
+	router.
+		On("setUsername", s.decode(s.handleSetUsername)).
+		On(MsgTypeJoin, s.decode(s.handleJoinRoom)).
+		On(MsgTypeLeave, s.decode(s.handleLeaveRoom)).
+		On(MsgTypeChat, s.decode(s.handleChatMessage)).
+		On(MsgTypeRooms, func(c *wshub.Client, _ *wshub.Message) error {
+			return s.handleGetRooms(c)
+		})
+
+	// Middleware wraps the entire router — recovery and logging apply to all events.
+	return wshub.NewMiddlewareChain(router.Handle).
+		Use(wshub.RecoveryMiddleware(logger)).
+		Use(wshub.LoggingMiddleware(logger)).
+		Execute
+}
+
+// decode adapts a handler that expects a ChatMessage to the HandlerFunc signature.
+func (s *ChatServer) decode(fn func(*wshub.Client, ChatMessage) error) wshub.HandlerFunc {
+	return func(client *wshub.Client, msg *wshub.Message) error {
+		var chatMsg ChatMessage
+		if err := json.Unmarshal(msg.Data, &chatMsg); err != nil {
+			return wshub.ErrInvalidMessage
+		}
+		return fn(client, chatMsg)
 	}
 }
 
