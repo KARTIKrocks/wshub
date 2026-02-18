@@ -1,35 +1,33 @@
-package websocket
+package wshub
 
 import "errors"
 
 // Sentinel errors for WebSocket operations.
 var (
 	// Connection errors
-	ErrConnectionClosed = errors.New("websocket: connection closed")
-	ErrWriteTimeout     = errors.New("websocket: write timeout")
-	ErrReadTimeout      = errors.New("websocket: read timeout")
-	ErrInvalidMessage   = errors.New("websocket: invalid message")
+	ErrConnectionClosed = errors.New("wshub: connection closed")
+	ErrWriteTimeout     = errors.New("wshub: write timeout")
+	ErrReadTimeout      = errors.New("wshub: read timeout")
+	ErrInvalidMessage   = errors.New("wshub: invalid message")
 
 	// Client errors
-	ErrClientNotFound      = errors.New("websocket: client not found")
-	ErrClientAlreadyExists = errors.New("websocket: client already exists")
+	ErrClientNotFound      = errors.New("wshub: client not found")
+	ErrClientAlreadyExists = errors.New("wshub: client already exists")
 
 	// Room errors
-	ErrRoomNotFound  = errors.New("websocket: room not found")
-	ErrAlreadyInRoom = errors.New("websocket: client already in room")
-	ErrNotInRoom     = errors.New("websocket: client not in room")
-	ErrRoomFull      = errors.New("websocket: room is full")
+	ErrRoomNotFound  = errors.New("wshub: room not found")
+	ErrAlreadyInRoom = errors.New("wshub: client already in room")
+	ErrNotInRoom     = errors.New("wshub: client not in room")
+	ErrRoomFull      = errors.New("wshub: room is full")
 
 	// Limit errors
-	ErrMaxConnectionsReached = errors.New("websocket: max connections reached")
-	ErrMaxRoomsReached       = errors.New("websocket: max rooms per client reached")
-	ErrRateLimitExceeded     = errors.New("websocket: rate limit exceeded")
+	ErrMaxConnectionsReached    = errors.New("wshub: max connections reached")
+	ErrMaxRoomsReached          = errors.New("wshub: max rooms per client reached")
+	ErrRateLimitExceeded        = errors.New("wshub: rate limit exceeded")
+	ErrMaxUserConnectionsReached = errors.New("wshub: max connections per user reached")
 
 	// Authentication errors
-	ErrAuthenticationFailed = errors.New("websocket: authentication failed")
-	ErrUnauthorized         = errors.New("websocket: unauthorized")
+	ErrAuthenticationFailed = errors.New("wshub: authentication failed")
+	ErrUnauthorized         = errors.New("wshub: unauthorized")
 
-	// Codec errors
-	ErrEncodingFailed = errors.New("websocket: encoding failed")
-	ErrDecodingFailed = errors.New("websocket: decoding failed")
 )

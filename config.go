@@ -1,6 +1,6 @@
-// Package websocket provides WebSocket connection management with support
+// Package wshub provides WebSocket connection management with support
 // for rooms, broadcasting, and message handling.
-package websocket
+package wshub
 
 import (
 	"net/http"
@@ -66,6 +66,38 @@ func DefaultConfig() Config {
 		EnableCompression: false,
 		CheckOrigin:       AllowAllOrigins,
 	}
+}
+
+// applyConfigDefaults fills zero-value fields in c with defaults from
+// DefaultConfig so that Config{ReadBufferSize: 4096} behaves identically
+// to DefaultConfig().WithBufferSizes(4096, 1024) for every unset field.
+func applyConfigDefaults(c Config) Config {
+	d := DefaultConfig()
+	if c.ReadBufferSize == 0 {
+		c.ReadBufferSize = d.ReadBufferSize
+	}
+	if c.WriteBufferSize == 0 {
+		c.WriteBufferSize = d.WriteBufferSize
+	}
+	if c.WriteWait == 0 {
+		c.WriteWait = d.WriteWait
+	}
+	if c.PongWait == 0 {
+		c.PongWait = d.PongWait
+	}
+	if c.PingPeriod == 0 {
+		c.PingPeriod = d.PingPeriod
+	}
+	if c.MaxMessageSize == 0 {
+		c.MaxMessageSize = d.MaxMessageSize
+	}
+	if c.SendChannelSize == 0 {
+		c.SendChannelSize = d.SendChannelSize
+	}
+	if c.CheckOrigin == nil {
+		c.CheckOrigin = d.CheckOrigin
+	}
+	return c
 }
 
 // WithBufferSizes returns a new config with the specified buffer sizes.

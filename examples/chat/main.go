@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	websocket "github.com/KARTIKrocks/websocket"
+	wshub "github.com/KARTIKrocks/wshub"
 )
 
 // Message types
@@ -48,119 +48,106 @@ type Room struct {
 
 // ChatServer wraps the WebSocket hub with chat-specific logic
 type ChatServer struct {
-	hub       *websocket.Hub
+	hub       *wshub.Hub
 	usernames map[string]string // clientID -> username
 	mu        sync.RWMutex
 }
 
 // NewChatServer creates a new chat server
 func NewChatServer() *ChatServer {
-	config := websocket.DefaultConfig().
+	server := &ChatServer{
+		usernames: make(map[string]string),
+	}
+
+	config := wshub.DefaultConfig().
 		WithMaxMessageSize(1024 * 1024).
 		WithCompression(true).
-		WithCheckOrigin(websocket.AllowAllOrigins)
+		WithCheckOrigin(wshub.AllowAllOrigins)
 
-	hub := websocket.NewHub(config)
-
-	// Set limits
-	limits := websocket.DefaultLimits().
+	limits := wshub.DefaultLimits().
 		WithMaxConnections(10000).
 		WithMaxConnectionsPerUser(5).
 		WithMaxRoomsPerClient(10).
 		WithMaxClientsPerRoom(100)
-	hub.SetLimits(limits)
 
-	server := &ChatServer{
-		hub:       hub,
-		usernames: make(map[string]string),
-	}
+	server.hub = wshub.NewHub(
+		wshub.WithConfig(config),
+		wshub.WithLimits(limits),
+		wshub.WithHooks(wshub.Hooks{
+			BeforeConnect: func(r *http.Request) error {
+				// You could add authentication here
+				// For demo, we accept all connections
+				return nil
+			},
 
-	// Set up hooks
-	server.setupHooks()
+			AfterConnect: func(client *wshub.Client) {
+				log.Printf("Client connected: %s", client.ID)
 
-	// Set up message handler with middleware
-	server.setupMessageHandler()
+				// Send welcome message
+				welcome := ChatMessage{
+					Type:    "welcome",
+					Message: "Welcome to the chat server!",
+				}
+				data, _ := json.Marshal(welcome)
+				client.Send(data)
+			},
+
+			AfterDisconnect: func(client *wshub.Client) {
+				log.Printf("Client disconnected: %s", client.ID)
+
+				// Remove username
+				server.mu.Lock()
+				username := server.usernames[client.ID]
+				delete(server.usernames, client.ID)
+				server.mu.Unlock()
+
+				// Notify rooms
+				for _, room := range client.Rooms() {
+					server.notifyRoomUsers(room, fmt.Sprintf("%s left the room", username))
+				}
+			},
+
+			AfterRoomJoin: func(client *wshub.Client, room string) {
+				server.mu.RLock()
+				username := server.usernames[client.ID]
+				server.mu.RUnlock()
+
+				// Notify room members
+				server.notifyRoomUsers(room, fmt.Sprintf("%s joined the room", username))
+
+				// Send room user list to new member
+				server.sendRoomUsers(client, room)
+			},
+
+			AfterRoomLeave: func(client *wshub.Client, room string) {
+				server.mu.RLock()
+				username := server.usernames[client.ID]
+				server.mu.RUnlock()
+
+				// Notify room members
+				server.notifyRoomUsers(room, fmt.Sprintf("%s left the room", username))
+			},
+
+			OnError: func(client *wshub.Client, err error) {
+				log.Printf("Client error %s: %v", client.ID, err)
+			},
+		}),
+		wshub.WithMessageHandler(func(client *wshub.Client, msg *wshub.Message) error {
+			// Create middleware chain
+			chain := wshub.NewMiddlewareChain(server.handleMessage).
+				Use(wshub.RecoveryMiddleware(&SimpleLogger{})).
+				Use(wshub.LoggingMiddleware(&SimpleLogger{}))
+			return chain.Execute(client, msg)
+		}),
+	)
 
 	return server
 }
 
-func (s *ChatServer) setupHooks() {
-	s.hub.SetHooks(websocket.Hooks{
-		BeforeConnect: func(r *http.Request) error {
-			// You could add authentication here
-			// For demo, we accept all connections
-			return nil
-		},
-
-		AfterConnect: func(client *websocket.Client) {
-			log.Printf("Client connected: %s", client.ID)
-
-			// Send welcome message
-			welcome := ChatMessage{
-				Type:    "welcome",
-				Message: "Welcome to the chat server!",
-			}
-			data, _ := json.Marshal(welcome)
-			client.Send(data)
-		},
-
-		AfterDisconnect: func(client *websocket.Client) {
-			log.Printf("Client disconnected: %s", client.ID)
-
-			// Remove username
-			s.mu.Lock()
-			username := s.usernames[client.ID]
-			delete(s.usernames, client.ID)
-			s.mu.Unlock()
-
-			// Notify rooms
-			for _, room := range client.Rooms() {
-				s.notifyRoomUsers(room, fmt.Sprintf("%s left the room", username))
-			}
-		},
-
-		AfterRoomJoin: func(client *websocket.Client, room string) {
-			s.mu.RLock()
-			username := s.usernames[client.ID]
-			s.mu.RUnlock()
-
-			// Notify room members
-			s.notifyRoomUsers(room, fmt.Sprintf("%s joined the room", username))
-
-			// Send room user list to new member
-			s.sendRoomUsers(client, room)
-		},
-
-		AfterRoomLeave: func(client *websocket.Client, room string) {
-			s.mu.RLock()
-			username := s.usernames[client.ID]
-			s.mu.RUnlock()
-
-			// Notify room members
-			s.notifyRoomUsers(room, fmt.Sprintf("%s left the room", username))
-		},
-
-		OnError: func(client *websocket.Client, err error) {
-			log.Printf("Client error %s: %v", client.ID, err)
-		},
-	})
-}
-
-func (s *ChatServer) setupMessageHandler() {
-	// Create middleware chain
-	chain := websocket.NewMiddlewareChain(s.handleMessage).
-		Use(websocket.RecoveryMiddleware(&SimpleLogger{})).
-		Use(websocket.LoggingMiddleware(&SimpleLogger{}))
-
-	s.hub.OnMessage(func(client *websocket.Client, msg *websocket.Message) error {
-		return chain.Execute(client, msg)
-	})
-}
-
-func (s *ChatServer) handleMessage(client *websocket.Client, msg *websocket.Message) error {
+func (s *ChatServer) handleMessage(client *wshub.Client, msg *wshub.Message) error {
 	var chatMsg ChatMessage
 	if err := json.Unmarshal(msg.Data, &chatMsg); err != nil {
-		return websocket.ErrInvalidMessage
+		return wshub.ErrInvalidMessage
 	}
 
 	switch chatMsg.Type {
@@ -175,11 +162,11 @@ func (s *ChatServer) handleMessage(client *websocket.Client, msg *websocket.Mess
 	case MsgTypeRooms:
 		return s.handleGetRooms(client)
 	default:
-		return websocket.ErrInvalidMessage
+		return wshub.ErrInvalidMessage
 	}
 }
 
-func (s *ChatServer) handleSetUsername(client *websocket.Client, msg ChatMessage) error {
+func (s *ChatServer) handleSetUsername(client *wshub.Client, msg ChatMessage) error {
 	s.mu.Lock()
 	s.usernames[client.ID] = msg.Message
 	s.mu.Unlock()
@@ -194,7 +181,7 @@ func (s *ChatServer) handleSetUsername(client *websocket.Client, msg ChatMessage
 	return client.Send(data)
 }
 
-func (s *ChatServer) handleJoinRoom(client *websocket.Client, msg ChatMessage) error {
+func (s *ChatServer) handleJoinRoom(client *wshub.Client, msg ChatMessage) error {
 	if err := s.hub.JoinRoom(client, msg.Room); err != nil {
 		return err
 	}
@@ -208,7 +195,7 @@ func (s *ChatServer) handleJoinRoom(client *websocket.Client, msg ChatMessage) e
 	return client.Send(data)
 }
 
-func (s *ChatServer) handleLeaveRoom(client *websocket.Client, msg ChatMessage) error {
+func (s *ChatServer) handleLeaveRoom(client *wshub.Client, msg ChatMessage) error {
 	if err := s.hub.LeaveRoom(client, msg.Room); err != nil {
 		return err
 	}
@@ -222,7 +209,7 @@ func (s *ChatServer) handleLeaveRoom(client *websocket.Client, msg ChatMessage) 
 	return client.Send(data)
 }
 
-func (s *ChatServer) handleChatMessage(client *websocket.Client, msg ChatMessage) error {
+func (s *ChatServer) handleChatMessage(client *wshub.Client, msg ChatMessage) error {
 	s.mu.RLock()
 	username := s.usernames[client.ID]
 	s.mu.RUnlock()
@@ -244,7 +231,7 @@ func (s *ChatServer) handleChatMessage(client *websocket.Client, msg ChatMessage
 	return nil
 }
 
-func (s *ChatServer) handleGetRooms(client *websocket.Client) error {
+func (s *ChatServer) handleGetRooms(client *wshub.Client) error {
 	roomNames := s.hub.RoomNames()
 	rooms := make([]Room, 0, len(roomNames))
 
@@ -274,7 +261,7 @@ func (s *ChatServer) notifyRoomUsers(room, message string) {
 	s.hub.BroadcastToRoom(room, data)
 }
 
-func (s *ChatServer) sendRoomUsers(client *websocket.Client, room string) {
+func (s *ChatServer) sendRoomUsers(client *wshub.Client, room string) {
 	clients := s.hub.RoomClients(room)
 	users := make([]User, 0, len(clients))
 
@@ -309,7 +296,7 @@ func (s *ChatServer) HandleHTTP() http.HandlerFunc {
 	return s.hub.HandleHTTP()
 }
 
-// SimpleLogger implements websocket.Logger interface
+// SimpleLogger implements wshub.Logger interface
 type SimpleLogger struct{}
 
 func (l *SimpleLogger) Debug(msg string, args ...any) {

@@ -1,4 +1,4 @@
-package websocket
+package wshub
 
 // HandlerFunc is a function that handles WebSocket messages.
 type HandlerFunc func(*Client, *Message) error

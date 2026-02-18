@@ -1,4 +1,4 @@
-package websocket
+package wshub
 
 // Logger is an interface for logging.
 // Applications can plug in their own logger (zap, logrus, slog, etc.)

@@ -1,35 +1,45 @@
-package websocket
+package wshub
 
 import (
 	"context"
-	"encoding/json"
+	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
+// sendItem carries a message type and data through the send channel.
+type sendItem struct {
+	msgType int
+	data    []byte
+}
+
 // Client represents a WebSocket client connection.
 type Client struct {
 	// ID is the unique identifier for this client.
 	ID string
 
-	// UserID is an optional user identifier (set after authentication).
-	UserID string
-
-	// Metadata stores custom data associated with the client.
-	Metadata map[string]any
-
 	hub    *Hub
 	conn   *websocket.Conn
-	send   chan []byte
+	send   chan sendItem
 	config Config
 
-	mu       sync.RWMutex
-	rooms    map[string]bool
-	closed   bool
-	closedAt time.Time
+	// Unexported fields protected by mu
+	mu          sync.RWMutex
+	userID      string
+	metadata    map[string]any
+	rooms       map[string]struct{}
+	closed      bool
+	connectedAt time.Time
+	closedAt    time.Time
+	request     *http.Request
+
+	// Rate limiting
+	msgCount      int64
+	msgWindowStart atomic.Value // time.Time
 
 	// Callbacks protected by callbackMu
 	callbackMu sync.RWMutex
@@ -39,48 +49,77 @@ type Client struct {
 }
 
 // newClient creates a new client from a WebSocket connection.
-func newClient(hub *Hub, conn *websocket.Conn, config Config) *Client {
-	return &Client{
-		ID:       uuid.New().String(),
-		Metadata: make(map[string]any),
-		hub:      hub,
-		conn:     conn,
-		send:     make(chan []byte, config.SendChannelSize),
-		config:   config,
-		rooms:    make(map[string]bool),
+func newClient(hub *Hub, conn *websocket.Conn, config Config, r *http.Request) *Client {
+	c := &Client{
+		ID:          uuid.New().String(),
+		hub:         hub,
+		conn:        conn,
+		send:        make(chan sendItem, config.SendChannelSize),
+		config:      config,
+		metadata:    make(map[string]any),
+		rooms:       make(map[string]struct{}),
+		connectedAt: time.Now(),
+		request:     r,
 	}
+	c.msgWindowStart.Store(time.Now())
+	return c
+}
+
+// Request returns the HTTP request that initiated this WebSocket connection.
+// Use it to access headers, query params, remote address, and other request data.
+func (c *Client) Request() *http.Request {
+	return c.request
+}
+
+// ConnectedAt returns the time when this client connected.
+func (c *Client) ConnectedAt() time.Time {
+	return c.connectedAt
 }
 
 // SetUserID sets the user ID for authenticated clients.
-func (c *Client) SetUserID(userID string) {
+// Returns an error if MaxConnectionsPerUser limit would be exceeded.
+func (c *Client) SetUserID(userID string) error {
 	c.mu.Lock()
-	oldUserID := c.UserID
-	c.UserID = userID
+	oldUserID := c.userID
+	c.mu.Unlock()
+
+	if oldUserID == userID {
+		return nil
+	}
+
+	// Check per-user connection limit before allowing the change
+	if !c.hub.canAcceptUserConnection(userID) {
+		return ErrMaxUserConnectionsReached
+	}
+
+	c.mu.Lock()
+	c.userID = userID
 	c.mu.Unlock()
 
 	// Update the hub's user index
 	c.hub.UpdateClientUserID(c, oldUserID, userID)
+	return nil
 }
 
 // GetUserID returns the user ID.
 func (c *Client) GetUserID() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.UserID
+	return c.userID
 }
 
 // SetMetadata sets a metadata value.
 func (c *Client) SetMetadata(key string, value any) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.Metadata[key] = value
+	c.metadata[key] = value
 }
 
 // GetMetadata returns a metadata value.
 func (c *Client) GetMetadata(key string) (any, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	v, ok := c.Metadata[key]
+	v, ok := c.metadata[key]
 	return v, ok
 }
 
@@ -88,7 +127,7 @@ func (c *Client) GetMetadata(key string) (any, bool) {
 func (c *Client) DeleteMetadata(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	delete(c.Metadata, key)
+	delete(c.metadata, key)
 }
 
 // OnMessage sets the message handler for this client.
@@ -124,11 +163,11 @@ func (c *Client) SendText(text string) error {
 
 // SendJSON sends a JSON-encoded message to the client.
 func (c *Client) SendJSON(v any) error {
-	data, err := json.Marshal(v)
+	msg, err := NewJSONMessage(v)
 	if err != nil {
 		return err
 	}
-	return c.Send(data)
+	return c.Send(msg.Data)
 }
 
 // SendBinary sends a binary message to the client.
@@ -145,8 +184,9 @@ func (c *Client) SendMessage(msgType MessageType, data []byte) error {
 	}
 	c.mu.RUnlock()
 
+	item := sendItem{msgType: int(msgType), data: data}
 	select {
-	case c.send <- data:
+	case c.send <- item:
 		return nil
 	default:
 		c.hub.logger.Warn("Send buffer full, message dropped",
@@ -167,8 +207,9 @@ func (c *Client) SendWithContext(ctx context.Context, data []byte) error {
 	}
 	c.mu.RUnlock()
 
+	item := sendItem{msgType: websocket.TextMessage, data: data}
 	select {
-	case c.send <- data:
+	case c.send <- item:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
@@ -231,7 +272,8 @@ func (c *Client) Rooms() []string {
 func (c *Client) InRoom(room string) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.rooms[room]
+	_, ok := c.rooms[room]
+	return ok
 }
 
 // RoomCount returns the number of rooms the client is in.
@@ -245,7 +287,7 @@ func (c *Client) RoomCount() int {
 func (c *Client) joinRoom(room string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.rooms[room] = true
+	c.rooms[room] = struct{}{}
 }
 
 // leaveRoom marks the client as left from a room.
@@ -255,10 +297,38 @@ func (c *Client) leaveRoom(room string) {
 	delete(c.rooms, room)
 }
 
+// checkRateLimit checks if the client has exceeded the message rate limit.
+// Returns true if the message should be allowed.
+func (c *Client) checkRateLimit() bool {
+	maxRate := c.hub.limits.MaxMessageRate
+	if maxRate <= 0 {
+		return true
+	}
+
+	now := time.Now()
+	windowStart := c.msgWindowStart.Load().(time.Time)
+
+	// Reset window if more than 1 second has passed
+	if now.Sub(windowStart) >= time.Second {
+		c.msgWindowStart.Store(now)
+		atomic.StoreInt64(&c.msgCount, 1)
+		return true
+	}
+
+	count := atomic.AddInt64(&c.msgCount, 1)
+	return count <= int64(maxRate)
+}
+
 // readPump pumps messages from the WebSocket connection to the hub.
 func (c *Client) readPump(ctx context.Context) {
 	defer func() {
 		c.hub.unregister <- c
+		c.conn.Close()
+	}()
+
+	// Use a goroutine watching ctx.Done() to close the connection and unblock ReadMessage.
+	go func() {
+		<-ctx.Done()
 		c.conn.Close()
 	}()
 
@@ -270,76 +340,86 @@ func (c *Client) readPump(ctx context.Context) {
 	})
 
 	for {
-		select {
-		case <-ctx.Done():
+		messageType, data, err := c.conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err,
+				websocket.CloseGoingAway,
+				websocket.CloseAbnormalClosure,
+				websocket.CloseNormalClosure) {
+
+				c.callbackMu.RLock()
+				errorHandler := c.onError
+				c.callbackMu.RUnlock()
+
+				if errorHandler != nil {
+					errorHandler(c, err)
+				}
+
+				// Call hub-level error hook
+				if c.hub.hooks.OnError != nil {
+					c.hub.hooks.OnError(c, err)
+				}
+
+				c.hub.metrics.IncrementErrors("read_error")
+			}
 			return
-		default:
-			messageType, data, err := c.conn.ReadMessage()
+		}
+
+		// Record metrics
+		c.hub.metrics.IncrementMessages()
+		c.hub.metrics.RecordMessageSize(len(data))
+
+		// Check rate limit
+		if !c.checkRateLimit() {
+			c.hub.logger.Warn("Rate limit exceeded, dropping message",
+				"clientID", c.ID,
+			)
+			c.hub.metrics.IncrementErrors("rate_limit_exceeded")
+			continue
+		}
+
+		msg := &Message{
+			Type:     MessageType(messageType),
+			Data:     data,
+			ClientID: c.ID,
+			Time:     time.Now(),
+		}
+
+		// Call BeforeMessage hook
+		if c.hub.hooks.BeforeMessage != nil {
+			modifiedMsg, err := c.hub.hooks.BeforeMessage(c, msg)
 			if err != nil {
-				if websocket.IsUnexpectedCloseError(err,
-					websocket.CloseGoingAway,
-					websocket.CloseAbnormalClosure,
-					websocket.CloseNormalClosure) {
-
-					c.callbackMu.RLock()
-					errorHandler := c.onError
-					c.callbackMu.RUnlock()
-
-					if errorHandler != nil {
-						errorHandler(c, err)
-					}
-
-					// Call hub-level error hook
-					if c.hub.hooks.OnError != nil {
-						c.hub.hooks.OnError(c, err)
-					}
-
-					c.hub.metrics.IncrementErrors("read_error")
-				}
-				return
+				c.hub.logger.Warn("Message rejected by BeforeMessage hook",
+					"clientID", c.ID,
+					"error", err,
+				)
+				continue
 			}
-
-			msg := &Message{
-				Type:     MessageType(messageType),
-				Data:     data,
-				ClientID: c.ID,
-				Time:     time.Now(),
+			if modifiedMsg != nil {
+				msg = modifiedMsg
 			}
+		}
 
-			// Call BeforeMessage hook
-			if c.hub.hooks.BeforeMessage != nil {
-				modifiedMsg, err := c.hub.hooks.BeforeMessage(c, msg)
-				if err != nil {
-					c.hub.logger.Warn("Message rejected by BeforeMessage hook",
-						"clientID", c.ID,
-						"error", err,
-					)
-					continue
-				}
-				if modifiedMsg != nil {
-					msg = modifiedMsg
-				}
-			}
+		// Call client-specific handler
+		c.callbackMu.RLock()
+		messageHandler := c.onMessage
+		c.callbackMu.RUnlock()
 
-			// Call client-specific handler
-			c.callbackMu.RLock()
-			messageHandler := c.onMessage
-			c.callbackMu.RUnlock()
+		if messageHandler != nil {
+			messageHandler(c, msg)
+		}
 
-			if messageHandler != nil {
-				messageHandler(c, msg)
-			}
+		// Call hub-level handler with latency recording
+		var handlerErr error
+		if c.hub.onMessage != nil {
+			start := time.Now()
+			handlerErr = c.hub.onMessage(c, msg)
+			c.hub.metrics.RecordLatency(time.Since(start))
+		}
 
-			// Call hub-level handler
-			var handlerErr error
-			if c.hub.onMessage != nil {
-				handlerErr = c.hub.onMessage(c, msg)
-			}
-
-			// Call AfterMessage hook
-			if c.hub.hooks.AfterMessage != nil {
-				c.hub.hooks.AfterMessage(c, msg, handlerErr)
-			}
+		// Call AfterMessage hook
+		if c.hub.hooks.AfterMessage != nil {
+			c.hub.hooks.AfterMessage(c, msg, handlerErr)
 		}
 	}
 }
@@ -356,8 +436,8 @@ func (c *Client) writePump(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-			/*
-		case message, ok := <-c.send:
+
+		case item, ok := <-c.send:
 			c.conn.SetWriteDeadline(time.Now().Add(c.config.WriteWait))
 			if !ok {
 				// Hub closed the channel
@@ -365,7 +445,7 @@ func (c *Client) writePump(ctx context.Context) {
 				return
 			}
 
-			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
+			if err := c.conn.WriteMessage(item.msgType, item.data); err != nil {
 				c.hub.metrics.IncrementErrors("write_error")
 				return
 			}
@@ -373,38 +453,11 @@ func (c *Client) writePump(ctx context.Context) {
 			// Send queued messages as separate frames
 			n := len(c.send)
 			for range n {
-				if err := c.conn.WriteMessage(websocket.TextMessage, <-c.send); err != nil {
+				queued := <-c.send
+				if err := c.conn.WriteMessage(queued.msgType, queued.data); err != nil {
 					c.hub.metrics.IncrementErrors("write_error")
 					return
 				}
-			}
-
-			 */
-		case message, ok := <-c.send:
-			c.conn.SetWriteDeadline(time.Now().Add(c.config.WriteWait))
-			if !ok {
-				// Hub closed the channel
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
-				return
-			}
-
-			w, err := c.conn.NextWriter(websocket.TextMessage)
-			if err != nil {
-				c.hub.metrics.IncrementErrors("write_error")
-				return
-			}
-			w.Write(message)
-
-			// Batch queued messages
-			n := len(c.send)
-			for range n {
-				w.Write([]byte{'\n'})
-				w.Write(<-c.send)
-			}
-
-			if err := w.Close(); err != nil {
-				c.hub.metrics.IncrementErrors("write_close_error")
-				return
 			}
 
 		case <-ticker.C:

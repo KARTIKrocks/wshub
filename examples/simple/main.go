@@ -9,21 +9,21 @@ import (
 	"syscall"
 	"time"
 
-	websocket "github.com/KARTIKrocks/websocket"
+	wshub "github.com/KARTIKrocks/wshub"
 )
 
 func main() {
-	// Create hub with default configuration
-	hub := websocket.NewHub(websocket.DefaultConfig())
+	// Create hub with functional options
+	var hub *wshub.Hub
+	hub = wshub.NewHub(
+		wshub.WithMessageHandler(func(client *wshub.Client, msg *wshub.Message) error {
+			log.Printf("Message from client %s: %s", client.ID, msg.Text())
 
-	// Set up message handler
-	hub.OnMessage(func(client *websocket.Client, msg *websocket.Message) error {
-		log.Printf("Message from client %s: %s", client.ID, msg.Text())
-
-		// Echo message back to all clients
-		hub.Broadcast(msg.Data)
-		return nil
-	})
+			// Echo message back to all clients
+			hub.Broadcast(msg.Data)
+			return nil
+		}),
+	)
 
 	// Start the hub
 	go hub.Run()

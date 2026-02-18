@@ -1,8 +1,9 @@
-package websocket
+package wshub
 
 import (
 	"context"
 	"net/http"
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -12,23 +13,26 @@ import (
 // Room represents a chat room with its own lock for better concurrency.
 type Room struct {
 	mu      sync.RWMutex
-	clients map[*Client]bool
+	clients map[*Client]struct{}
 }
 
 // Hub maintains the set of active clients and broadcasts messages.
 type Hub struct {
 	// Clients is the set of registered clients.
-	clients map[*Client]bool
+	clients map[*Client]struct{}
+
+	// O(1) client lookup by ID
+	clientIndex map[string]*Client
 
 	// Lock-free snapshot for broadcasting
-	clientsSnapshot atomic.Value // map[*Client]bool
+	clientsSnapshot atomic.Value // map[*Client]struct{}
 
 	// Rooms with per-room locks
 	rooms   map[string]*Room
 	roomsMu sync.RWMutex
 
 	// User ID index for O(1) lookups
-	userIndex   map[string]map[*Client]bool // userID -> clients
+	userIndex   map[string]map[*Client]struct{} // userID -> clients
 	userIndexMu sync.RWMutex
 
 	// Channels for client management.
@@ -66,55 +70,56 @@ type Hub struct {
 }
 
 // NewHub creates a new WebSocket hub.
-func NewHub(config Config) *Hub {
+func NewHub(opts ...Option) *Hub {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	upgrader := websocket.Upgrader{
-		ReadBufferSize:    config.ReadBufferSize,
-		WriteBufferSize:   config.WriteBufferSize,
-		CheckOrigin:       config.CheckOrigin,
-		EnableCompression: config.EnableCompression,
-		Subprotocols:      config.Subprotocols,
-	}
-
 	h := &Hub{
-		clients:           make(map[*Client]bool),
+		clients:           make(map[*Client]struct{}),
+		clientIndex:       make(map[string]*Client),
 		rooms:             make(map[string]*Room),
-		userIndex:         make(map[string]map[*Client]bool),
+		userIndex:         make(map[string]map[*Client]struct{}),
 		register:          make(chan *Client),
 		unregister:        make(chan *Client),
-		config:            config,
+		config:            DefaultConfig(),
 		limits:            DefaultLimits(),
-		upgrader:          upgrader,
 		logger:            &NoOpLogger{},
 		metrics:           &NoOpMetrics{},
 		ctx:               ctx,
 		cancel:            cancel,
-		parallelBatchSize: 100,   // Default: 100 clients per goroutine
-		useParallel:       false, // Default: disabled (enable for high client counts)
+		parallelBatchSize: 100,
+		useParallel:       false,
+	}
+
+	// Apply functional options
+	for _, opt := range opts {
+		opt(h)
+	}
+
+	// Fill zero-value config fields with defaults so that a partial
+	// Config{} literal behaves the same as DefaultConfig() for unset fields.
+	h.config = applyConfigDefaults(h.config)
+
+	// Build upgrader from final config
+	h.upgrader = websocket.Upgrader{
+		ReadBufferSize:    h.config.ReadBufferSize,
+		WriteBufferSize:   h.config.WriteBufferSize,
+		CheckOrigin:       h.config.CheckOrigin,
+		EnableCompression: h.config.EnableCompression,
+		Subprotocols:      h.config.Subprotocols,
 	}
 
 	// Initialize snapshot with empty map
-	h.clientsSnapshot.Store(make(map[*Client]bool))
+	h.clientsSnapshot.Store(make(map[*Client]struct{}))
 
 	return h
-}
-
-// SetParallelBroadcast enables or disables parallel broadcasting.
-// batchSize determines how many clients each goroutine handles (recommended: 50-200).
-func (h *Hub) SetParallelBroadcast(enabled bool, batchSize int) {
-	h.useParallel = enabled
-	if batchSize > 0 {
-		h.parallelBatchSize = batchSize
-	}
 }
 
 // updateClientsSnapshot creates a new snapshot of clients for lock-free reads.
 func (h *Hub) updateClientsSnapshot() {
 	h.mu.RLock()
-	snapshot := make(map[*Client]bool, len(h.clients))
+	snapshot := make(map[*Client]struct{}, len(h.clients))
 	for client := range h.clients {
-		snapshot[client] = true
+		snapshot[client] = struct{}{}
 	}
 	h.mu.RUnlock()
 
@@ -130,9 +135,9 @@ func (h *Hub) addToUserIndex(client *Client) {
 
 	h.userIndexMu.Lock()
 	if h.userIndex[userID] == nil {
-		h.userIndex[userID] = make(map[*Client]bool)
+		h.userIndex[userID] = make(map[*Client]struct{})
 	}
-	h.userIndex[userID][client] = true
+	h.userIndex[userID][client] = struct{}{}
 	h.userIndexMu.Unlock()
 }
 
@@ -159,50 +164,35 @@ func (h *Hub) UpdateClientUserID(client *Client, oldUserID, newUserID string) {
 		return
 	}
 
+	h.userIndexMu.Lock()
+	defer h.userIndexMu.Unlock()
+
 	if oldUserID != "" {
-		h.userIndexMu.Lock()
 		if clients, ok := h.userIndex[oldUserID]; ok {
 			delete(clients, client)
 			if len(clients) == 0 {
 				delete(h.userIndex, oldUserID)
 			}
 		}
-		h.userIndexMu.Unlock()
 	}
 
 	if newUserID != "" {
-		h.userIndexMu.Lock()
 		if h.userIndex[newUserID] == nil {
-			h.userIndex[newUserID] = make(map[*Client]bool)
+			h.userIndex[newUserID] = make(map[*Client]struct{})
 		}
-		h.userIndex[newUserID][client] = true
-		h.userIndexMu.Unlock()
+		h.userIndex[newUserID][client] = struct{}{}
 	}
 }
 
-// SetLogger sets the logger for the hub.
-func (h *Hub) SetLogger(logger Logger) {
-	h.logger = logger
-}
-
-// SetMetrics sets the metrics collector for the hub.
-func (h *Hub) SetMetrics(metrics MetricsCollector) {
-	h.metrics = metrics
-}
-
-// SetLimits sets the limits for the hub.
-func (h *Hub) SetLimits(limits Limits) {
-	h.limits = limits
-}
-
-// SetHooks sets the lifecycle hooks for the hub.
-func (h *Hub) SetHooks(hooks Hooks) {
-	h.hooks = hooks
-}
-
-// OnMessage sets the message handler.
-func (h *Hub) OnMessage(fn func(*Client, *Message) error) {
-	h.onMessage = fn
+// canAcceptUserConnection checks if a user can accept another connection.
+func (h *Hub) canAcceptUserConnection(userID string) bool {
+	if h.limits.MaxConnectionsPerUser <= 0 || userID == "" {
+		return true
+	}
+	h.userIndexMu.RLock()
+	count := len(h.userIndex[userID])
+	h.userIndexMu.RUnlock()
+	return count < h.limits.MaxConnectionsPerUser
 }
 
 // Run starts the hub's main loop.
@@ -223,71 +213,94 @@ func (h *Hub) Run() {
 			return
 
 		case client := <-h.register:
-			h.mu.Lock()
-			h.clients[client] = true
-			h.mu.Unlock()
-
-			// Update snapshot after adding client
-			h.updateClientsSnapshot()
-
-			// Add to user index if user ID is set
-			h.addToUserIndex(client)
-
-			h.metrics.IncrementConnections()
-			h.logger.Info("Client registered",
-				"clientID", client.ID,
-				"totalClients", h.ClientCount(),
-			)
-
-			if h.hooks.AfterConnect != nil {
-				go h.hooks.AfterConnect(client)
-			}
+			h.handleRegister(client)
+			h.drainAndRebuildSnapshot()
 
 		case client := <-h.unregister:
-			h.mu.Lock()
-			if _, ok := h.clients[client]; ok {
-				delete(h.clients, client)
-
-				// Remove from user index
-				h.removeFromUserIndex(client)
-
-				// Remove from all rooms
-				h.removeClientFromAllRooms(client)
-			}
-			h.mu.Unlock()
-
-			// Update snapshot after removing client
-			h.updateClientsSnapshot()
-
-			h.metrics.DecrementConnections()
-			h.logger.Info("Client unregistered",
-				"clientID", client.ID,
-				"totalClients", h.ClientCount(),
-			)
-
-			// Call BeforeDisconnect hook
-			if h.hooks.BeforeDisconnect != nil {
-				h.hooks.BeforeDisconnect(client)
-			}
-
-			// Call client close handler
-			client.callbackMu.RLock()
-			closeHandler := client.onClose
-			client.callbackMu.RUnlock()
-
-			if closeHandler != nil {
-				go closeHandler(client)
-			}
-
-			// Call AfterDisconnect hook
-			if h.hooks.AfterDisconnect != nil {
-				go h.hooks.AfterDisconnect(client)
-			}
+			h.handleUnregister(client)
+			h.drainAndRebuildSnapshot()
 		}
 	}
 }
 
-// removeClientFromAllRooms removes a client from all rooms (called with h.mu held).
+// handleRegister processes a single client registration.
+func (h *Hub) handleRegister(client *Client) {
+	h.mu.Lock()
+	h.clients[client] = struct{}{}
+	h.clientIndex[client.ID] = client
+	h.mu.Unlock()
+
+	// Add to user index if user ID is set
+	h.addToUserIndex(client)
+
+	h.metrics.IncrementConnections()
+	h.logger.Info("Client registered",
+		"clientID", client.ID,
+		"totalClients", h.ClientCount(),
+	)
+
+	if h.hooks.AfterConnect != nil {
+		go h.hooks.AfterConnect(client)
+	}
+}
+
+// handleUnregister processes a single client unregistration.
+func (h *Hub) handleUnregister(client *Client) {
+	h.mu.Lock()
+	if _, ok := h.clients[client]; ok {
+		delete(h.clients, client)
+		delete(h.clientIndex, client.ID)
+	}
+	h.mu.Unlock()
+
+	// Release h.mu before calling these to avoid deadlock
+	h.removeFromUserIndex(client)
+	h.removeClientFromAllRooms(client)
+
+	h.metrics.DecrementConnections()
+	h.logger.Info("Client unregistered",
+		"clientID", client.ID,
+		"totalClients", h.ClientCount(),
+	)
+
+	// Call BeforeDisconnect hook
+	if h.hooks.BeforeDisconnect != nil {
+		h.hooks.BeforeDisconnect(client)
+	}
+
+	// Call client close handler
+	client.callbackMu.RLock()
+	closeHandler := client.onClose
+	client.callbackMu.RUnlock()
+
+	if closeHandler != nil {
+		go closeHandler(client)
+	}
+
+	// Call AfterDisconnect hook
+	if h.hooks.AfterDisconnect != nil {
+		go h.hooks.AfterDisconnect(client)
+	}
+}
+
+// drainAndRebuildSnapshot drains any pending register/unregister events,
+// then rebuilds the clients snapshot once. During connection bursts this
+// coalesces N map copies into 1.
+func (h *Hub) drainAndRebuildSnapshot() {
+	for {
+		select {
+		case client := <-h.register:
+			h.handleRegister(client)
+		case client := <-h.unregister:
+			h.handleUnregister(client)
+		default:
+			h.updateClientsSnapshot()
+			return
+		}
+	}
+}
+
+// removeClientFromAllRooms removes a client from all rooms.
 func (h *Hub) removeClientFromAllRooms(client *Client) {
 	for room := range client.rooms {
 		h.roomsMu.Lock()
@@ -327,12 +340,12 @@ func (h *Hub) Shutdown(ctx context.Context) error {
 // HandleHTTP returns an HTTP handler that upgrades connections to WebSocket.
 func (h *Hub) HandleHTTP() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		h.HandleRequest(w, r)
+		h.UpgradeConnection(w, r)
 	}
 }
 
-// HandleRequest upgrades an HTTP connection to WebSocket.
-func (h *Hub) HandleRequest(w http.ResponseWriter, r *http.Request) (*Client, error) {
+// UpgradeConnection upgrades an HTTP connection to WebSocket.
+func (h *Hub) UpgradeConnection(w http.ResponseWriter, r *http.Request) (*Client, error) {
 	// Call BeforeConnect hook
 	if h.hooks.BeforeConnect != nil {
 		if err := h.hooks.BeforeConnect(r); err != nil {
@@ -359,7 +372,7 @@ func (h *Hub) HandleRequest(w http.ResponseWriter, r *http.Request) (*Client, er
 		return nil, err
 	}
 
-	client := newClient(h, conn, h.config)
+	client := newClient(h, conn, h.config, r)
 
 	// Register the client
 	h.register <- client
@@ -378,12 +391,29 @@ func (h *Hub) HandleRequest(w http.ResponseWriter, r *http.Request) (*Client, er
 	return client, nil
 }
 
+// HandleRequest is an alias for UpgradeConnection for backward compatibility.
+func (h *Hub) HandleRequest(w http.ResponseWriter, r *http.Request) (*Client, error) {
+	return h.UpgradeConnection(w, r)
+}
+
 // canAcceptConnection checks if a new connection can be accepted based on limits.
 func (h *Hub) canAcceptConnection() error {
 	if h.limits.MaxConnections > 0 && h.ClientCount() >= h.limits.MaxConnections {
 		return ErrMaxConnectionsReached
 	}
 	return nil
+}
+
+// trySend attempts to send a sendItem to a client's send channel without blocking.
+func (h *Hub) trySend(client *Client, item sendItem) {
+	select {
+	case client.send <- item:
+	default:
+		h.logger.Warn("Client send buffer full, skipping broadcast",
+			"clientID", client.ID,
+		)
+		h.metrics.IncrementErrors("send_buffer_full")
+	}
 }
 
 // Clients returns all connected clients.
@@ -405,17 +435,12 @@ func (h *Hub) ClientCount() int {
 	return len(h.clients)
 }
 
-// GetClient returns a client by ID.
+// GetClient returns a client by ID (O(1) lookup).
 func (h *Hub) GetClient(id string) (*Client, bool) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-
-	for client := range h.clients {
-		if client.ID == id {
-			return client, true
-		}
-	}
-	return nil, false
+	client, ok := h.clientIndex[id]
+	return client, ok
 }
 
 // GetClientByUserID returns a client by user ID.
@@ -443,22 +468,15 @@ func (h *Hub) GetClientsByUserID(userID string) []*Client {
 	return clients
 }
 
-// broadcastSequential sends messages to clients sequentially (original method).
-func (h *Hub) broadcastSequential(snapshot map[*Client]bool, data []byte) {
+// broadcastSequential sends a sendItem to all clients in a snapshot sequentially.
+func (h *Hub) broadcastSequential(snapshot map[*Client]struct{}, item sendItem) {
 	for client := range snapshot {
-		select {
-		case client.send <- data:
-		default:
-			h.logger.Warn("Client send buffer full, skipping broadcast",
-				"clientID", client.ID,
-			)
-		}
+		h.trySend(client, item)
 	}
 }
 
-// broadcastParallel sends messages to clients in parallel batches.
-func (h *Hub) broadcastParallel(snapshot map[*Client]bool, data []byte) {
-	// Convert map to slice for easier batching
+// broadcastParallel sends a sendItem to all clients in a snapshot in parallel batches.
+func (h *Hub) broadcastParallel(snapshot map[*Client]struct{}, item sendItem) {
 	clients := make([]*Client, 0, len(snapshot))
 	for client := range snapshot {
 		clients = append(clients, client)
@@ -468,61 +486,55 @@ func (h *Hub) broadcastParallel(snapshot map[*Client]bool, data []byte) {
 		return
 	}
 
-	// Calculate number of batches
 	batchSize := h.parallelBatchSize
 	numBatches := (len(clients) + batchSize - 1) / batchSize
 
-	// Use WaitGroup to wait for all goroutines
 	var wg sync.WaitGroup
 	wg.Add(numBatches)
 
-	// Fan out to multiple goroutines
 	for i := range numBatches {
 		start := i * batchSize
-		end := min(start + batchSize, len(clients))
+		end := min(start+batchSize, len(clients))
 
-		// Launch goroutine for this batch
 		go func(batch []*Client) {
 			defer wg.Done()
-
 			for _, client := range batch {
-				select {
-				case client.send <- data:
-				default:
-					h.logger.Warn("Client send buffer full, skipping broadcast",
-						"clientID", client.ID,
-					)
-					h.metrics.IncrementErrors("send_buffer_full")
-				}
+				h.trySend(client, item)
 			}
 		}(clients[start:end])
 	}
 
-	// Wait for all batches to complete
 	wg.Wait()
 }
 
-// Broadcast sends a message to all connected clients.
-func (h *Hub) Broadcast(data []byte) {
-	// Load snapshot without any locks!
-	snapshot := h.clientsSnapshot.Load().(map[*Client]bool)
-
+// broadcast is the internal dispatch used by Broadcast and BroadcastBinary.
+func (h *Hub) broadcast(item sendItem) {
+	snapshot := h.clientsSnapshot.Load().(map[*Client]struct{})
 	if h.useParallel && len(snapshot) > h.parallelBatchSize {
-		h.broadcastParallel(snapshot, data)
+		h.broadcastParallel(snapshot, item)
 	} else {
-		h.broadcastSequential(snapshot, data)
+		h.broadcastSequential(snapshot, item)
 	}
+}
+
+// Broadcast sends a text message to all connected clients.
+func (h *Hub) Broadcast(data []byte) {
+	h.broadcast(sendItem{msgType: websocket.TextMessage, data: data})
+}
+
+// BroadcastBinary sends a binary message to all connected clients.
+func (h *Hub) BroadcastBinary(data []byte) {
+	h.broadcast(sendItem{msgType: websocket.BinaryMessage, data: data})
 }
 
 // BroadcastWithContext sends a message to all clients with context support.
 func (h *Hub) BroadcastWithContext(ctx context.Context, data []byte) error {
-	snapshot := h.clientsSnapshot.Load().(map[*Client]bool)
+	snapshot := h.clientsSnapshot.Load().(map[*Client]struct{})
 
-	// For context support, we use sequential to check ctx.Done()
-	// Parallel version with context would be more complex
+	item := sendItem{msgType: websocket.TextMessage, data: data}
 	for client := range snapshot {
 		select {
-		case client.send <- data:
+		case client.send <- item:
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
@@ -549,25 +561,26 @@ func (h *Hub) BroadcastJSON(v any) error {
 	return nil
 }
 
-// broadcastExceptSequential sends to all clients except one (sequential).
-func (h *Hub) broadcastExceptSequential(snapshot map[*Client]bool, data []byte, except *Client) {
+// isExcluded reports whether client is in the except list.
+func isExcluded(client *Client, except []*Client) bool {
+	return slices.Contains(except, client)
+}
+
+// broadcastExceptSequential sends to all clients not in except (sequential).
+func (h *Hub) broadcastExceptSequential(snapshot map[*Client]struct{}, item sendItem, except []*Client) {
 	for client := range snapshot {
-		if client == except {
+		if isExcluded(client, except) {
 			continue
 		}
-		select {
-		case client.send <- data:
-		default:
-		}
+		h.trySend(client, item)
 	}
 }
 
-// broadcastExceptParallel sends to all clients except one (parallel).
-func (h *Hub) broadcastExceptParallel(snapshot map[*Client]bool, data []byte, except *Client) {
-	// Filter and convert to slice
+// broadcastExceptParallel sends to all clients not in except (parallel).
+func (h *Hub) broadcastExceptParallel(snapshot map[*Client]struct{}, item sendItem, except []*Client) {
 	clients := make([]*Client, 0, len(snapshot))
 	for client := range snapshot {
-		if client != except {
+		if !isExcluded(client, except) {
 			clients = append(clients, client)
 		}
 	}
@@ -584,17 +597,12 @@ func (h *Hub) broadcastExceptParallel(snapshot map[*Client]bool, data []byte, ex
 
 	for i := range numBatches {
 		start := i * batchSize
-		end := min(start + batchSize, len(clients))
+		end := min(start+batchSize, len(clients))
 
 		go func(batch []*Client) {
 			defer wg.Done()
-
 			for _, client := range batch {
-				select {
-				case client.send <- data:
-				default:
-					h.metrics.IncrementErrors("send_buffer_full")
-				}
+				h.trySend(client, item)
 			}
 		}(clients[start:end])
 	}
@@ -602,25 +610,23 @@ func (h *Hub) broadcastExceptParallel(snapshot map[*Client]bool, data []byte, ex
 	wg.Wait()
 }
 
-// BroadcastExcept sends a message to all clients except the specified one.
-func (h *Hub) BroadcastExcept(data []byte, except *Client) {
-	snapshot := h.clientsSnapshot.Load().(map[*Client]bool)
-
+// BroadcastExcept sends a text message to all clients except those specified.
+func (h *Hub) BroadcastExcept(data []byte, except ...*Client) {
+	snapshot := h.clientsSnapshot.Load().(map[*Client]struct{})
+	item := sendItem{msgType: websocket.TextMessage, data: data}
 	if h.useParallel && len(snapshot) > h.parallelBatchSize {
-		h.broadcastExceptParallel(snapshot, data, except)
+		h.broadcastExceptParallel(snapshot, item, except)
 	} else {
-		h.broadcastExceptSequential(snapshot, data, except)
+		h.broadcastExceptSequential(snapshot, item, except)
 	}
 }
 
 // SendToUser sends a message to all clients of a specific user.
 func (h *Hub) SendToUser(userID string, data []byte) {
 	clients := h.GetClientsByUserID(userID)
+	item := sendItem{msgType: websocket.TextMessage, data: data}
 	for _, client := range clients {
-		select {
-		case client.send <- data:
-		default:
-		}
+		h.trySend(client, item)
 	}
 }
 
@@ -660,7 +666,7 @@ func (h *Hub) JoinRoom(client *Client, roomName string) error {
 	room, exists := h.rooms[roomName]
 	if !exists {
 		room = &Room{
-			clients: make(map[*Client]bool),
+			clients: make(map[*Client]struct{}),
 		}
 		h.rooms[roomName] = room
 	}
@@ -676,11 +682,11 @@ func (h *Hub) JoinRoom(client *Client, roomName string) error {
 	}
 
 	// Check if already in room
-	if room.clients[client] {
+	if _, ok := room.clients[client]; ok {
 		return ErrAlreadyInRoom
 	}
 
-	room.clients[client] = true
+	room.clients[client] = struct{}{}
 	client.joinRoom(roomName)
 
 	h.metrics.IncrementRoomJoins()
@@ -711,7 +717,7 @@ func (h *Hub) LeaveRoom(client *Client, roomName string) error {
 
 	// Lock only this room
 	room.mu.Lock()
-	if !room.clients[client] {
+	if _, inRoom := room.clients[client]; !inRoom {
 		room.mu.Unlock()
 		return ErrNotInRoom
 	}
@@ -800,25 +806,22 @@ func (h *Hub) LeaveAllRooms(client *Client) {
 	}
 
 	client.mu.Lock()
-	client.rooms = make(map[string]bool)
+	client.rooms = make(map[string]struct{})
 	client.mu.Unlock()
 }
 
 // broadcastToRoomSequential sends to all clients in a room (sequential).
-func (h *Hub) broadcastToRoomSequential(room *Room, data []byte) {
+func (h *Hub) broadcastToRoomSequential(room *Room, item sendItem) {
 	room.mu.RLock()
 	defer room.mu.RUnlock()
 
 	for client := range room.clients {
-		select {
-		case client.send <- data:
-		default:
-		}
+		h.trySend(client, item)
 	}
 }
 
 // broadcastToRoomParallel sends to all clients in a room (parallel).
-func (h *Hub) broadcastToRoomParallel(room *Room, data []byte) {
+func (h *Hub) broadcastToRoomParallel(room *Room, item sendItem) {
 	room.mu.RLock()
 	clients := make([]*Client, 0, len(room.clients))
 	for client := range room.clients {
@@ -838,17 +841,12 @@ func (h *Hub) broadcastToRoomParallel(room *Room, data []byte) {
 
 	for i := range numBatches {
 		start := i * batchSize
-		end := min(start + batchSize, len(clients))
+		end := min(start+batchSize, len(clients))
 
 		go func(batch []*Client) {
 			defer wg.Done()
-
 			for _, client := range batch {
-				select {
-				case client.send <- data:
-				default:
-					h.metrics.IncrementErrors("send_buffer_full")
-				}
+				h.trySend(client, item)
 			}
 		}(clients[start:end])
 	}
@@ -856,11 +854,8 @@ func (h *Hub) broadcastToRoomParallel(room *Room, data []byte) {
 	wg.Wait()
 }
 
-// BroadcastToRoom sends a message to all clients in a room.
-// OPTIMIZATION #2: Locks only the specific room
-// OPTIMIZATION #4: Uses parallel fan-out if enabled.
+// BroadcastToRoom sends a text message to all clients in a room.
 func (h *Hub) BroadcastToRoom(roomName string, data []byte) error {
-	// Get room with minimal lock time
 	h.roomsMu.RLock()
 	room, ok := h.rooms[roomName]
 	h.roomsMu.RUnlock()
@@ -869,25 +864,25 @@ func (h *Hub) BroadcastToRoom(roomName string, data []byte) error {
 		return ErrRoomNotFound
 	}
 
+	item := sendItem{msgType: websocket.TextMessage, data: data}
+
 	if h.useParallel {
-		// Count clients to decide if parallel is worth it
 		room.mu.RLock()
 		clientCount := len(room.clients)
 		room.mu.RUnlock()
 
 		if clientCount > h.parallelBatchSize {
-			h.broadcastToRoomParallel(room, data)
+			h.broadcastToRoomParallel(room, item)
 			return nil
 		}
 	}
 
-	h.broadcastToRoomSequential(room, data)
+	h.broadcastToRoomSequential(room, item)
 	return nil
 }
 
-// BroadcastToRoomExcept sends a message to all clients in a room except one.
-// OPTIMIZATION #2: Locks only the specific room
-func (h *Hub) BroadcastToRoomExcept(roomName string, data []byte, except *Client) error {
+// BroadcastToRoomExcept sends a message to all clients in a room except those specified.
+func (h *Hub) BroadcastToRoomExcept(roomName string, data []byte, except ...*Client) error {
 	h.roomsMu.RLock()
 	room, ok := h.rooms[roomName]
 	h.roomsMu.RUnlock()
@@ -899,14 +894,12 @@ func (h *Hub) BroadcastToRoomExcept(roomName string, data []byte, except *Client
 	room.mu.RLock()
 	defer room.mu.RUnlock()
 
+	item := sendItem{msgType: websocket.TextMessage, data: data}
 	for client := range room.clients {
-		if client == except {
+		if isExcluded(client, except) {
 			continue
 		}
-		select {
-		case client.send <- data:
-		default:
-		}
+		h.trySend(client, item)
 	}
 
 	return nil

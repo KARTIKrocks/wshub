@@ -1,4 +1,4 @@
-package websocket
+package wshub
 
 // Limits defines various limits for WebSocket operations.
 type Limits struct {
