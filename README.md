@@ -1,23 +1,23 @@
-# WebSocket Package
+# wshub
 
 A production-ready, reusable WebSocket package for Go with support for rooms, broadcasting, middleware, hooks, and extensibility.
 
 ## Features
 
-- 🚀 **Production-Ready**: Proper concurrency, graceful shutdown, error handling
-- 🔌 **Pluggable**: Bring your own logger, metrics, codec
-- 🎯 **Middleware System**: Chain handlers with custom logic
-- 🪝 **Lifecycle Hooks**: Hook into connection, message, and room events
-- 🏠 **Room Support**: Group clients into rooms for targeted broadcasting
-- 📊 **Metrics & Logging**: Built-in interfaces for observability
-- ⚙️ **Configurable**: Extensive configuration with builder pattern
-- 🛡️ **Limits & Rate Limiting**: Control connections, rooms, and message rates
-- 📦 **Zero Business Logic**: Pure infrastructure, bring your own logic
+- **Production-Ready**: Proper concurrency, graceful shutdown, error handling
+- **Pluggable**: Bring your own logger, metrics, codec
+- **Middleware System**: Chain handlers with custom logic
+- **Lifecycle Hooks**: Hook into connection, message, and room events
+- **Room Support**: Group clients into rooms for targeted broadcasting
+- **Metrics & Logging**: Built-in interfaces for observability
+- **Configurable**: Extensive configuration with builder pattern
+- **Limits & Rate Limiting**: Control connections, rooms, and message rates
+- **Zero Business Logic**: Pure infrastructure, bring your own logic
 
 ## Installation
 
 ```bash
-go get github.com/yourusername/websocket
+go get github.com/KARTIKrocks/wshub
 ```
 
 ## Quick Start
@@ -31,24 +31,22 @@ import (
     "net/http"
     "time"
 
-    "github.com/yourusername/websocket"
+    "github.com/KARTIKrocks/wshub"
 )
 
 func main() {
     // Create hub with configuration
-    config := websocket.DefaultConfig().
+    config := wshub.DefaultConfig().
         WithMaxMessageSize(1024 * 1024).
         WithCompression(true)
 
-    hub := websocket.NewHub(config)
-
-    // Set up message handling
-    hub.OnMessage(func(client *websocket.Client, msg *websocket.Message) error {
-        log.Printf("Message from %s: %s", client.ID, msg.Text())
-
-        // Echo back to sender
-        return client.Send(msg.Data)
-    })
+    hub := wshub.NewHub(
+        wshub.WithConfig(config),
+        wshub.WithMessageHandler(func(client *wshub.Client, msg *wshub.Message) error {
+            log.Printf("Message from %s: %s", client.ID, msg.Text())
+            return client.Send(msg.Data)
+        }),
+    )
 
     // Start the hub
     go hub.Run()
@@ -73,10 +71,10 @@ func main() {
 ### Basic Configuration
 
 ```go
-config := websocket.DefaultConfig()
+config := wshub.DefaultConfig()
 
 // Or customize
-config := websocket.Config{
+config := wshub.Config{
     ReadBufferSize:    4096,
     WriteBufferSize:   4096,
     WriteWait:         10 * time.Second,
@@ -85,31 +83,31 @@ config := websocket.Config{
     MaxMessageSize:    1024 * 1024,
     SendChannelSize:   512,
     EnableCompression: true,
-    CheckOrigin:       websocket.AllowAllOrigins,
+    CheckOrigin:       wshub.AllowAllOrigins,
 }
 ```
 
 ### Builder Pattern
 
 ```go
-config := websocket.DefaultConfig().
+config := wshub.DefaultConfig().
     WithBufferSizes(4096, 4096).
     WithMaxMessageSize(1024 * 1024).
     WithCompression(true).
-    WithCheckOrigin(websocket.AllowOrigins("https://example.com"))
+    WithCheckOrigin(wshub.AllowOrigins("https://example.com"))
 ```
 
 ### Origin Checking
 
 ```go
 // Allow all origins (default)
-config.CheckOrigin = websocket.AllowAllOrigins
+config.CheckOrigin = wshub.AllowAllOrigins
 
 // Allow same origin only
-config.CheckOrigin = websocket.AllowSameOrigin
+config.CheckOrigin = wshub.AllowSameOrigin
 
 // Allow specific origins
-config.CheckOrigin = websocket.AllowOrigins("https://example.com", "https://app.example.com")
+config.CheckOrigin = wshub.AllowOrigins("https://example.com", "https://app.example.com")
 
 // Custom checker
 config.CheckOrigin = func(r *http.Request) bool {
@@ -178,10 +176,10 @@ exists := hub.RoomExists("general")
 ```go
 // Client properties
 client.ID       // Unique client ID
-client.UserID   // User ID (set after auth)
 
 // Set user ID
 client.SetUserID("user-123")
+userID := client.GetUserID()
 
 // Metadata
 client.SetMetadata("role", "admin")
@@ -209,15 +207,15 @@ closed := client.IsClosed()
 closedAt := client.ClosedAt()
 
 // Client-specific handlers
-client.OnMessage(func(c *websocket.Client, msg *websocket.Message) {
+client.OnMessage(func(c *wshub.Client, msg *wshub.Message) {
     // Handle message
 })
 
-client.OnClose(func(c *websocket.Client) {
+client.OnClose(func(c *wshub.Client) {
     // Handle close
 })
 
-client.OnError(func(c *websocket.Client, err error) {
+client.OnError(func(c *wshub.Client, err error) {
     // Handle error
 })
 ```
@@ -225,111 +223,109 @@ client.OnError(func(c *websocket.Client, err error) {
 ## Hooks System
 
 ```go
-hub.SetHooks(websocket.Hooks{
-    // Before connection upgrade
-    BeforeConnect: func(r *http.Request) error {
-        token := r.Header.Get("Authorization")
-        if !validateToken(token) {
-            return websocket.ErrAuthenticationFailed
-        }
-        return nil
-    },
+hub := wshub.NewHub(
+    wshub.WithHooks(wshub.Hooks{
+        // Before connection upgrade
+        BeforeConnect: func(r *http.Request) error {
+            token := r.Header.Get("Authorization")
+            if !validateToken(token) {
+                return wshub.ErrAuthenticationFailed
+            }
+            return nil
+        },
 
-    // After successful connection
-    AfterConnect: func(client *websocket.Client) {
-        log.Printf("Client connected: %s", client.ID)
-    },
+        // After successful connection
+        AfterConnect: func(client *wshub.Client) {
+            log.Printf("Client connected: %s", client.ID)
+        },
 
-    // Before message processing
-    BeforeMessage: func(client *websocket.Client, msg *websocket.Message) (*websocket.Message, error) {
-        // Validate or modify message
-        if len(msg.Data) > 1000 {
-            return nil, errors.New("message too large")
-        }
-        return msg, nil
-    },
+        // Before message processing
+        BeforeMessage: func(client *wshub.Client, msg *wshub.Message) (*wshub.Message, error) {
+            if len(msg.Data) > 1000 {
+                return nil, errors.New("message too large")
+            }
+            return msg, nil
+        },
 
-    // After message processing
-    AfterMessage: func(client *websocket.Client, msg *websocket.Message, err error) {
-        if err != nil {
-            log.Printf("Message error: %v", err)
-        }
-    },
+        // After message processing
+        AfterMessage: func(client *wshub.Client, msg *wshub.Message, err error) {
+            if err != nil {
+                log.Printf("Message error: %v", err)
+            }
+        },
 
-    // Before room join
-    BeforeRoomJoin: func(client *websocket.Client, room string) error {
-        // Check permissions
-        if !canJoinRoom(client, room) {
-            return websocket.ErrUnauthorized
-        }
-        return nil
-    },
+        // Before room join
+        BeforeRoomJoin: func(client *wshub.Client, room string) error {
+            if !canJoinRoom(client, room) {
+                return wshub.ErrUnauthorized
+            }
+            return nil
+        },
 
-    // After room join
-    AfterRoomJoin: func(client *websocket.Client, room string) {
-        // Notify room members
-        hub.BroadcastToRoomExcept(room,
-            []byte(fmt.Sprintf("%s joined", client.ID)),
-            client,
-        )
-    },
+        // After room join
+        AfterRoomJoin: func(client *wshub.Client, room string) {
+            hub.BroadcastToRoomExcept(room,
+                []byte(fmt.Sprintf("%s joined", client.ID)),
+                client,
+            )
+        },
 
-    // On error
-    OnError: func(client *websocket.Client, err error) {
-        log.Printf("Client error: %v", err)
-    },
-})
+        // On error
+        OnError: func(client *wshub.Client, err error) {
+            log.Printf("Client error: %v", err)
+        },
+    }),
+)
 ```
 
 ## Middleware System
 
 ```go
 // Create middleware chain
-chain := websocket.NewMiddlewareChain(handleMessage).
-    Use(websocket.RecoveryMiddleware(logger)).
-    Use(websocket.LoggingMiddleware(logger)).
-    Use(websocket.MetricsMiddleware(metrics)).
-    Use(RateLimitMiddleware(limiter)).
-    Use(AuthMiddleware(authService))
+chain := wshub.NewMiddlewareChain(handleMessage).
+    Use(wshub.RecoveryMiddleware(logger)).
+    Use(wshub.LoggingMiddleware(logger)).
+    Use(wshub.MetricsMiddleware(metrics)).
+    Build()
 
 // Use in message handler
-hub.OnMessage(func(client *websocket.Client, msg *websocket.Message) error {
-    return chain.Execute(client, msg)
-})
+hub := wshub.NewHub(
+    wshub.WithMessageHandler(chain.Execute),
+)
 ```
 
 ### Built-in Middlewares
 
 ```go
 // Logging
-websocket.LoggingMiddleware(logger)
+wshub.LoggingMiddleware(logger)
 
 // Panic recovery
-websocket.RecoveryMiddleware(logger)
+wshub.RecoveryMiddleware(logger)
 
 // Metrics
-websocket.MetricsMiddleware(metrics)
+wshub.MetricsMiddleware(metrics)
 ```
 
 ### Custom Middleware
 
 ```go
-func RateLimitMiddleware(limiter RateLimiter) websocket.Middleware {
-    return func(next websocket.HandlerFunc) websocket.HandlerFunc {
-        return func(client *websocket.Client, msg *websocket.Message) error {
+func RateLimitMiddleware(limiter RateLimiter) wshub.Middleware {
+    return func(next wshub.HandlerFunc) wshub.HandlerFunc {
+        return func(client *wshub.Client, msg *wshub.Message) error {
             if !limiter.Allow(client.ID) {
-                return websocket.ErrRateLimitExceeded
+                return wshub.ErrRateLimitExceeded
             }
             return next(client, msg)
         }
     }
 }
 
-func AuthMiddleware(auth AuthService) websocket.Middleware {
-    return func(next websocket.HandlerFunc) websocket.HandlerFunc {
-        return func(client *websocket.Client, msg *websocket.Message) error {
+func AuthMiddleware(auth AuthService) wshub.Middleware {
+    return func(next wshub.HandlerFunc) wshub.HandlerFunc {
+        return func(client *wshub.Client, msg *wshub.Message) error {
             if client.GetUserID() == "" {
-                return websocket.ErrUnauthorized
+                return wshub.ErrUnauthorized
             }
             return next(client, msg)
         }
@@ -362,8 +358,7 @@ func (l *ZapLogger) Error(msg string, args ...any) {
 }
 
 // Use it
-logger, _ := zap.NewProduction()
-hub.SetLogger(&ZapLogger{logger})
+hub := wshub.NewHub(wshub.WithLogger(&ZapLogger{logger}))
 ```
 
 ## Metrics
@@ -396,20 +391,20 @@ func (m *PrometheusMetrics) IncrementErrors(errorType string) {
 // ... implement other methods
 
 // Use it
-hub.SetMetrics(NewPrometheusMetrics())
+hub := wshub.NewHub(wshub.WithMetrics(NewPrometheusMetrics()))
 ```
 
 ## Limits
 
 ```go
-limits := websocket.DefaultLimits().
+limits := wshub.DefaultLimits().
     WithMaxConnections(10000).
     WithMaxConnectionsPerUser(5).
     WithMaxRoomsPerClient(10).
     WithMaxClientsPerRoom(100).
     WithMaxMessageRate(100)
 
-hub.SetLimits(limits)
+hub := wshub.NewHub(wshub.WithLimits(limits))
 ```
 
 ## Error Handling
@@ -417,29 +412,31 @@ hub.SetLimits(limits)
 ```go
 err := hub.JoinRoom(client, room)
 switch err {
-case websocket.ErrClientNotFound:
+case wshub.ErrClientNotFound:
     // Client not registered
-case websocket.ErrAlreadyInRoom:
+case wshub.ErrAlreadyInRoom:
     // Client already in room
-case websocket.ErrRoomNotFound:
+case wshub.ErrEmptyRoomName:
+    // Empty room name
+case wshub.ErrRoomNotFound:
     // Room doesn't exist
-case websocket.ErrNotInRoom:
+case wshub.ErrNotInRoom:
     // Client not in room
-case websocket.ErrConnectionClosed:
+case wshub.ErrConnectionClosed:
     // Connection was closed
-case websocket.ErrWriteTimeout:
+case wshub.ErrWriteTimeout:
     // Write buffer full
-case websocket.ErrMaxConnectionsReached:
+case wshub.ErrMaxConnectionsReached:
     // Connection limit reached
-case websocket.ErrMaxRoomsReached:
+case wshub.ErrMaxRoomsReached:
     // Room limit per client reached
-case websocket.ErrRoomFull:
+case wshub.ErrRoomFull:
     // Room is full
-case websocket.ErrRateLimitExceeded:
+case wshub.ErrRateLimitExceeded:
     // Rate limit exceeded
-case websocket.ErrAuthenticationFailed:
+case wshub.ErrAuthenticationFailed:
     // Authentication failed
-case websocket.ErrUnauthorized:
+case wshub.ErrUnauthorized:
     // Unauthorized action
 }
 ```
@@ -448,14 +445,12 @@ case websocket.ErrUnauthorized:
 
 See [examples/chat/](examples/chat/) for a complete chat application demonstrating:
 
-- Authentication with JWT
 - Room management
-- Private messaging
-- Presence tracking
+- Username tracking
+- Message broadcasting
+- Middleware (recovery + logging)
 - Rate limiting
-- Custom middleware
-- Prometheus metrics
-- Structured logging with Zap
+- Connection limits
 
 ## JavaScript Client
 
@@ -508,7 +503,7 @@ ws.onerror = (error) => {
 - Use `BroadcastWithContext` for timeout control
 - Batch messages when possible
 - Monitor send buffer sizes via metrics
-- Use connection pooling for clients
+- Use `WithParallelBroadcast` for 1000+ concurrent clients
 
 ## Thread Safety
 

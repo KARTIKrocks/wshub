@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -161,10 +162,12 @@ func (s *ChatServer) buildRouter() wshub.HandlerFunc {
 		})
 
 	// Middleware wraps the entire router — recovery and logging apply to all events.
-	return wshub.NewMiddlewareChain(router.Handle).
+	chain := wshub.NewMiddlewareChain(router.Handle).
 		Use(wshub.RecoveryMiddleware(logger)).
 		Use(wshub.LoggingMiddleware(logger)).
-		Execute
+		Build()
+
+	return chain.Execute
 }
 
 // decode adapts a handler that expects a ChatMessage to the HandlerFunc signature.
@@ -312,19 +315,34 @@ func (s *ChatServer) HandleHTTP() http.HandlerFunc {
 type SimpleLogger struct{}
 
 func (l *SimpleLogger) Debug(msg string, args ...any) {
-	log.Printf("[DEBUG] "+msg, args...)
+	log.Printf("[DEBUG] %s %s", msg, formatLogArgs(args))
 }
 
 func (l *SimpleLogger) Info(msg string, args ...any) {
-	log.Printf("[INFO] "+msg, args...)
+	log.Printf("[INFO] %s %s", msg, formatLogArgs(args))
 }
 
 func (l *SimpleLogger) Warn(msg string, args ...any) {
-	log.Printf("[WARN] "+msg, args...)
+	log.Printf("[WARN] %s %s", msg, formatLogArgs(args))
 }
 
 func (l *SimpleLogger) Error(msg string, args ...any) {
-	log.Printf("[ERROR] "+msg, args...)
+	log.Printf("[ERROR] %s %s", msg, formatLogArgs(args))
+}
+
+// formatLogArgs formats structured key-value pairs for log output.
+func formatLogArgs(args []any) string {
+	if len(args) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(args)/2)
+	for i := 0; i+1 < len(args); i += 2 {
+		parts = append(parts, fmt.Sprintf("%v=%v", args[i], args[i+1]))
+	}
+	if len(args)%2 != 0 {
+		parts = append(parts, fmt.Sprintf("%v", args[len(args)-1]))
+	}
+	return strings.Join(parts, " ")
 }
 
 func main() {

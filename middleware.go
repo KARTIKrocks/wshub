@@ -10,6 +10,7 @@ type Middleware func(HandlerFunc) HandlerFunc
 type MiddlewareChain struct {
 	middlewares []Middleware
 	handler     HandlerFunc
+	built       HandlerFunc // cached composed handler
 }
 
 // NewMiddlewareChain creates a new middleware chain with the final handler.
@@ -21,20 +22,37 @@ func NewMiddlewareChain(handler HandlerFunc) *MiddlewareChain {
 }
 
 // Use adds a middleware to the chain.
+// Adding middleware invalidates any previously cached Build result.
 func (m *MiddlewareChain) Use(middleware Middleware) *MiddlewareChain {
 	m.middlewares = append(m.middlewares, middleware)
+	m.built = nil // invalidate cache
+	return m
+}
+
+// Build pre-computes the composed handler chain and caches it.
+// Subsequent calls to Execute will use the cached handler for better performance.
+// Returns the chain for method chaining.
+func (m *MiddlewareChain) Build() *MiddlewareChain {
+	handler := m.handler
+	for i := len(m.middlewares) - 1; i >= 0; i-- {
+		handler = m.middlewares[i](handler)
+	}
+	m.built = handler
 	return m
 }
 
 // Execute runs the middleware chain and final handler.
+// If Build has been called, uses the cached composed handler.
 func (m *MiddlewareChain) Execute(client *Client, msg *Message) error {
-	handler := m.handler
+	if m.built != nil {
+		return m.built(client, msg)
+	}
 
-	// Build chain from last to first
+	// Build chain on the fly
+	handler := m.handler
 	for i := len(m.middlewares) - 1; i >= 0; i-- {
 		handler = m.middlewares[i](handler)
 	}
-
 	return handler(client, msg)
 }
 

@@ -1,12 +1,11 @@
 # Quick Start Guide
 
-## 🚀 Get Started in 5 Minutes
+## Get Started in 5 Minutes
 
 ### 1. Install Dependencies
 
 ```bash
-go get github.com/google/uuid
-go get github.com/gorilla/websocket
+go get github.com/KARTIKrocks/wshub
 ```
 
 ### 2. Create a Basic Server
@@ -22,20 +21,19 @@ import (
     "net/http"
     "time"
 
-    "yourproject/pkg/websocket"
+    "github.com/KARTIKrocks/wshub"
 )
 
 func main() {
-    // Create hub
-    hub := websocket.NewHub(websocket.DefaultConfig())
+    // Create hub with message handler
+    hub := wshub.NewHub(
+        wshub.WithMessageHandler(func(client *wshub.Client, msg *wshub.Message) error {
+            log.Printf("Received: %s from %s", msg.Text(), client.ID)
 
-    // Handle messages
-    hub.OnMessage(func(client *websocket.Client, msg *websocket.Message) error {
-        log.Printf("Received: %s from %s", msg.Text(), client.ID)
-
-        // Echo back to sender
-        return client.Send(msg.Data)
-    })
+            // Echo back to sender
+            return client.Send(msg.Data)
+        }),
+    )
 
     // Start hub
     go hub.Run()
@@ -106,32 +104,36 @@ go run main.go
 
 Open `http://localhost:8080` in your browser and start chatting!
 
-## 📚 Next Steps
+## Next Steps
 
 ### Add Rooms
 
 ```go
-hub.OnMessage(func(client *websocket.Client, msg *websocket.Message) error {
-    // Join a room
-    hub.JoinRoom(client, "general")
+hub := wshub.NewHub(
+    wshub.WithMessageHandler(func(client *wshub.Client, msg *wshub.Message) error {
+        // Join a room
+        hub.JoinRoom(client, "general")
 
-    // Broadcast to room
-    return hub.BroadcastToRoom("general", msg.Data)
-})
+        // Broadcast to room
+        return hub.BroadcastToRoom("general", msg.Data)
+    }),
+)
 ```
 
 ### Add Authentication
 
 ```go
-hub.SetHooks(websocket.Hooks{
-    BeforeConnect: func(r *http.Request) error {
-        token := r.Header.Get("Authorization")
-        if token != "valid-token" {
-            return websocket.ErrAuthenticationFailed
-        }
-        return nil
-    },
-})
+hub := wshub.NewHub(
+    wshub.WithHooks(wshub.Hooks{
+        BeforeConnect: func(r *http.Request) error {
+            token := r.Header.Get("Authorization")
+            if token != "valid-token" {
+                return wshub.ErrAuthenticationFailed
+            }
+            return nil
+        },
+    }),
+)
 ```
 
 ### Add Logging
@@ -140,71 +142,43 @@ hub.SetHooks(websocket.Hooks{
 type SimpleLogger struct{}
 
 func (l *SimpleLogger) Debug(msg string, args ...any) {
-    log.Printf("[DEBUG] "+msg, args...)
+    log.Printf("[DEBUG] %s %s", msg, formatArgs(args))
 }
 func (l *SimpleLogger) Info(msg string, args ...any) {
-    log.Printf("[INFO] "+msg, args...)
+    log.Printf("[INFO] %s %s", msg, formatArgs(args))
 }
 func (l *SimpleLogger) Warn(msg string, args ...any) {
-    log.Printf("[WARN] "+msg, args...)
+    log.Printf("[WARN] %s %s", msg, formatArgs(args))
 }
 func (l *SimpleLogger) Error(msg string, args ...any) {
-    log.Printf("[ERROR] "+msg, args...)
+    log.Printf("[ERROR] %s %s", msg, formatArgs(args))
+}
+
+func formatArgs(args []any) string {
+    if len(args) == 0 {
+        return ""
+    }
+    parts := make([]string, 0, len(args)/2)
+    for i := 0; i+1 < len(args); i += 2 {
+        parts = append(parts, fmt.Sprintf("%v=%v", args[i], args[i+1]))
+    }
+    return strings.Join(parts, " ")
 }
 
 // Use it
-hub.SetLogger(&SimpleLogger{})
+hub := wshub.NewHub(wshub.WithLogger(&SimpleLogger{}))
 ```
 
 ### Add Rate Limiting
 
 ```go
-type SimpleRateLimiter struct {
-    requests map[string]int
-    mu       sync.Mutex
-}
+limits := wshub.DefaultLimits().
+    WithMaxMessageRate(100)
 
-func (r *SimpleRateLimiter) Allow(clientID string) bool {
-    r.mu.Lock()
-    defer r.mu.Unlock()
-
-    count := r.requests[clientID]
-    if count >= 100 { // 100 messages per client
-        return false
-    }
-    r.requests[clientID] = count + 1
-    return true
-}
-
-func RateLimitMiddleware(limiter *SimpleRateLimiter) websocket.Middleware {
-    return func(next websocket.HandlerFunc) websocket.HandlerFunc {
-        return func(client *websocket.Client, msg *websocket.Message) error {
-            if !limiter.Allow(client.ID) {
-                return websocket.ErrRateLimitExceeded
-            }
-            return next(client, msg)
-        }
-    }
-}
-
-// Use it
-limiter := &SimpleRateLimiter{requests: make(map[string]int)}
-chain := websocket.NewMiddlewareChain(yourHandler).
-    Use(RateLimitMiddleware(limiter))
-
-hub.OnMessage(func(client *websocket.Client, msg *websocket.Message) error {
-    return chain.Execute(client, msg)
-})
+hub := wshub.NewHub(wshub.WithLimits(limits))
 ```
 
-## 🎓 Learn More
-
-- **Full Documentation**: See `README.md`
-- **Integration Guide**: See `USAGE.md`
-- **Implementation Guide**: See `IMPLEMENTATION_GUIDE.md`
-- **Examples**: Check the `examples/` directory
-
-## 💡 Common Patterns
+## Common Patterns
 
 ### JSON Messages
 
@@ -214,23 +188,25 @@ type Message struct {
     Payload json.RawMessage `json:"payload"`
 }
 
-hub.OnMessage(func(client *websocket.Client, msg *websocket.Message) error {
-    var message Message
-    if err := json.Unmarshal(msg.Data, &message); err != nil {
-        return err
-    }
+hub := wshub.NewHub(
+    wshub.WithMessageHandler(func(client *wshub.Client, msg *wshub.Message) error {
+        var message Message
+        if err := json.Unmarshal(msg.Data, &message); err != nil {
+            return err
+        }
 
-    switch message.Type {
-    case "chat":
-        // Handle chat message
-    case "join":
-        // Handle join request
-    default:
-        return websocket.ErrInvalidMessage
-    }
+        switch message.Type {
+        case "chat":
+            // Handle chat message
+        case "join":
+            // Handle join request
+        default:
+            return wshub.ErrInvalidMessage
+        }
 
-    return nil
-})
+        return nil
+    }),
+)
 ```
 
 ### Broadcasting
@@ -269,13 +245,13 @@ client, ok := hub.GetClientByUserID("user-123")
 clients := hub.GetClientsByUserID("user-123")
 ```
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Connection Rejected
 
 ```go
 // Check your origin checker
-config := websocket.DefaultConfig().
+config := wshub.DefaultConfig().
     WithCheckOrigin(func(r *http.Request) bool {
         log.Printf("Origin: %s", r.Header.Get("Origin"))
         return true // Allow all for testing
@@ -289,12 +265,6 @@ config := websocket.DefaultConfig().
 if hub.ClientCount() == 0 {
     log.Println("No clients connected")
 }
-
-// Check if message is sent
-hub.OnMessage(func(client *websocket.Client, msg *websocket.Message) error {
-    log.Printf("Message received from %s: %s", client.ID, msg.Text())
-    return nil
-})
 ```
 
 ### Server Not Shutting Down
@@ -309,24 +279,21 @@ if err := hub.Shutdown(ctx); err != nil {
 }
 ```
 
-## 🎯 Best Practices
+## Best Practices
 
-1. ✅ Always use graceful shutdown
-2. ✅ Set appropriate timeouts
-3. ✅ Implement error handling
-4. ✅ Use middleware for cross-cutting concerns
-5. ✅ Log important events
-6. ✅ Set connection limits
-7. ✅ Validate message size
-8. ✅ Use TLS in production (wss://)
-9. ✅ Implement rate limiting
-10. ✅ Monitor metrics
+1. Always use graceful shutdown
+2. Set appropriate timeouts
+3. Implement error handling
+4. Use middleware for cross-cutting concerns
+5. Log important events
+6. Set connection limits
+7. Validate message size
+8. Use TLS in production (wss://)
+9. Implement rate limiting
+10. Monitor metrics
 
-## 📞 Need Help?
+## Need Help?
 
 1. Check the examples in `examples/`
 2. Read the full documentation in `README.md`
-3. Review integration patterns in `USAGE.md`
-4. Look at the code comments
-
-Happy coding! 🎉
+3. Look at the code comments

@@ -9,6 +9,8 @@ type Hooks struct {
 	BeforeConnect func(*http.Request) error
 
 	// AfterConnect is called after a client successfully connects.
+	// It runs in its own goroutine, so the client may receive messages
+	// before this callback returns.
 	AfterConnect func(*Client)
 
 	// BeforeDisconnect is called before a client disconnects.

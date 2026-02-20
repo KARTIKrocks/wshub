@@ -206,7 +206,7 @@ func (h *Hub) Run() {
 			// Shutdown: close all client connections
 			h.mu.Lock()
 			for client := range h.clients {
-				client.Close()
+				_ = client.Close()
 			}
 			h.mu.Unlock()
 			h.logger.Info("Hub shutdown complete")
@@ -302,7 +302,15 @@ func (h *Hub) drainAndRebuildSnapshot() {
 
 // removeClientFromAllRooms removes a client from all rooms.
 func (h *Hub) removeClientFromAllRooms(client *Client) {
+	// Snapshot client.rooms under lock to avoid data race.
+	client.mu.RLock()
+	roomNames := make([]string, 0, len(client.rooms))
 	for room := range client.rooms {
+		roomNames = append(roomNames, room)
+	}
+	client.mu.RUnlock()
+
+	for _, room := range roomNames {
 		h.roomsMu.Lock()
 		if r, ok := h.rooms[room]; ok {
 			r.mu.Lock()
@@ -340,7 +348,7 @@ func (h *Hub) Shutdown(ctx context.Context) error {
 // HandleHTTP returns an HTTP handler that upgrades connections to WebSocket.
 func (h *Hub) HandleHTTP() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		h.UpgradeConnection(w, r)
+		_, _ = h.UpgradeConnection(w, r)
 	}
 }
 
@@ -389,11 +397,6 @@ func (h *Hub) UpgradeConnection(w http.ResponseWriter, r *http.Request) (*Client
 	}()
 
 	return client, nil
-}
-
-// HandleRequest is an alias for UpgradeConnection for backward compatibility.
-func (h *Hub) HandleRequest(w http.ResponseWriter, r *http.Request) (*Client, error) {
-	return h.UpgradeConnection(w, r)
 }
 
 // canAcceptConnection checks if a new connection can be accepted based on limits.
@@ -537,10 +540,6 @@ func (h *Hub) BroadcastWithContext(ctx context.Context, data []byte) error {
 		case client.send <- item:
 		case <-ctx.Done():
 			return ctx.Err()
-		default:
-			h.logger.Warn("Client send buffer full, skipping broadcast",
-				"clientID", client.ID,
-			)
 		}
 	}
 	return nil
@@ -641,6 +640,10 @@ func (h *Hub) SendToClient(clientID string, data []byte) error {
 
 // JoinRoom adds a client to a room.
 func (h *Hub) JoinRoom(client *Client, roomName string) error {
+	if roomName == "" {
+		return ErrEmptyRoomName
+	}
+
 	// Check if client exists
 	h.mu.RLock()
 	if _, ok := h.clients[client]; !ok {
@@ -706,6 +709,10 @@ func (h *Hub) JoinRoom(client *Client, roomName string) error {
 
 // LeaveRoom removes a client from a room.
 func (h *Hub) LeaveRoom(client *Client, roomName string) error {
+	if roomName == "" {
+		return ErrEmptyRoomName
+	}
+
 	// Get room
 	h.roomsMu.RLock()
 	room, ok := h.rooms[roomName]
@@ -856,6 +863,10 @@ func (h *Hub) broadcastToRoomParallel(room *Room, item sendItem) {
 
 // BroadcastToRoom sends a text message to all clients in a room.
 func (h *Hub) BroadcastToRoom(roomName string, data []byte) error {
+	if roomName == "" {
+		return ErrEmptyRoomName
+	}
+
 	h.roomsMu.RLock()
 	room, ok := h.rooms[roomName]
 	h.roomsMu.RUnlock()
@@ -883,6 +894,10 @@ func (h *Hub) BroadcastToRoom(roomName string, data []byte) error {
 
 // BroadcastToRoomExcept sends a message to all clients in a room except those specified.
 func (h *Hub) BroadcastToRoomExcept(roomName string, data []byte, except ...*Client) error {
+	if roomName == "" {
+		return ErrEmptyRoomName
+	}
+
 	h.roomsMu.RLock()
 	room, ok := h.rooms[roomName]
 	h.roomsMu.RUnlock()

@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -37,9 +36,13 @@ type Client struct {
 	closedAt    time.Time
 	request     *http.Request
 
-	// Rate limiting
-	msgCount      int64
-	msgWindowStart atomic.Value // time.Time
+	// Rate limiting — protected by rateMu
+	rateMu         sync.Mutex
+	msgCount       int64
+	msgWindowStart time.Time
+
+	// Close-once guard
+	closeOnce sync.Once
 
 	// Callbacks protected by callbackMu
 	callbackMu sync.RWMutex
@@ -51,17 +54,17 @@ type Client struct {
 // newClient creates a new client from a WebSocket connection.
 func newClient(hub *Hub, conn *websocket.Conn, config Config, r *http.Request) *Client {
 	c := &Client{
-		ID:          uuid.New().String(),
-		hub:         hub,
-		conn:        conn,
-		send:        make(chan sendItem, config.SendChannelSize),
-		config:      config,
-		metadata:    make(map[string]any),
-		rooms:       make(map[string]struct{}),
-		connectedAt: time.Now(),
-		request:     r,
+		ID:             uuid.New().String(),
+		hub:            hub,
+		conn:           conn,
+		send:           make(chan sendItem, config.SendChannelSize),
+		config:         config,
+		metadata:       make(map[string]any),
+		rooms:          make(map[string]struct{}),
+		connectedAt:    time.Now(),
+		request:        r,
+		msgWindowStart: time.Now(),
 	}
-	c.msgWindowStart.Store(time.Now())
 	return c
 }
 
@@ -81,18 +84,17 @@ func (c *Client) ConnectedAt() time.Time {
 func (c *Client) SetUserID(userID string) error {
 	c.mu.Lock()
 	oldUserID := c.userID
-	c.mu.Unlock()
-
 	if oldUserID == userID {
+		c.mu.Unlock()
 		return nil
 	}
 
 	// Check per-user connection limit before allowing the change
 	if !c.hub.canAcceptUserConnection(userID) {
+		c.mu.Unlock()
 		return ErrMaxUserConnectionsReached
 	}
 
-	c.mu.Lock()
 	c.userID = userID
 	c.mu.Unlock()
 
@@ -213,8 +215,6 @@ func (c *Client) SendWithContext(ctx context.Context, data []byte) error {
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
-	default:
-		return ErrWriteTimeout
 	}
 }
 
@@ -234,12 +234,20 @@ func (c *Client) CloseWithCode(code int, reason string) error {
 	c.closedAt = time.Now()
 	c.mu.Unlock()
 
-	// Send close message
+	// Send close message (best-effort, connection is closing anyway)
 	message := websocket.FormatCloseMessage(code, reason)
-	c.conn.WriteControl(websocket.CloseMessage, message, time.Now().Add(c.config.WriteWait))
+	_ = c.conn.WriteControl(websocket.CloseMessage, message, time.Now().Add(c.config.WriteWait))
 
 	close(c.send)
-	return c.conn.Close()
+	c.closeConn()
+	return nil
+}
+
+// closeConn closes the underlying WebSocket connection exactly once.
+func (c *Client) closeConn() {
+	c.closeOnce.Do(func() {
+		_ = c.conn.Close()
+	})
 }
 
 // IsClosed returns true if the connection is closed.
@@ -305,38 +313,44 @@ func (c *Client) checkRateLimit() bool {
 		return true
 	}
 
+	c.rateMu.Lock()
+	defer c.rateMu.Unlock()
+
 	now := time.Now()
-	windowStart := c.msgWindowStart.Load().(time.Time)
 
 	// Reset window if more than 1 second has passed
-	if now.Sub(windowStart) >= time.Second {
-		c.msgWindowStart.Store(now)
-		atomic.StoreInt64(&c.msgCount, 1)
+	if now.Sub(c.msgWindowStart) >= time.Second {
+		c.msgWindowStart = now
+		c.msgCount = 1
 		return true
 	}
 
-	count := atomic.AddInt64(&c.msgCount, 1)
-	return count <= int64(maxRate)
+	c.msgCount++
+	return c.msgCount <= int64(maxRate)
 }
 
 // readPump pumps messages from the WebSocket connection to the hub.
 func (c *Client) readPump(ctx context.Context) {
+	done := make(chan struct{})
 	defer func() {
+		close(done)
 		c.hub.unregister <- c
-		c.conn.Close()
+		c.closeConn()
 	}()
 
 	// Use a goroutine watching ctx.Done() to close the connection and unblock ReadMessage.
 	go func() {
-		<-ctx.Done()
-		c.conn.Close()
+		select {
+		case <-ctx.Done():
+			c.closeConn()
+		case <-done:
+		}
 	}()
 
 	c.conn.SetReadLimit(c.config.MaxMessageSize)
-	c.conn.SetReadDeadline(time.Now().Add(c.config.PongWait))
+	_ = c.conn.SetReadDeadline(time.Now().Add(c.config.PongWait))
 	c.conn.SetPongHandler(func(string) error {
-		c.conn.SetReadDeadline(time.Now().Add(c.config.PongWait))
-		return nil
+		return c.conn.SetReadDeadline(time.Now().Add(c.config.PongWait))
 	})
 
 	for {
@@ -429,7 +443,7 @@ func (c *Client) writePump(ctx context.Context) {
 	ticker := time.NewTicker(c.config.PingPeriod)
 	defer func() {
 		ticker.Stop()
-		c.conn.Close()
+		c.closeConn()
 	}()
 
 	for {
@@ -438,10 +452,10 @@ func (c *Client) writePump(ctx context.Context) {
 			return
 
 		case item, ok := <-c.send:
-			c.conn.SetWriteDeadline(time.Now().Add(c.config.WriteWait))
+			_ = c.conn.SetWriteDeadline(time.Now().Add(c.config.WriteWait))
 			if !ok {
 				// Hub closed the channel
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 
@@ -461,7 +475,7 @@ func (c *Client) writePump(ctx context.Context) {
 			}
 
 		case <-ticker.C:
-			c.conn.SetWriteDeadline(time.Now().Add(c.config.WriteWait))
+			_ = c.conn.SetWriteDeadline(time.Now().Add(c.config.WriteWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				c.hub.metrics.IncrementErrors("ping_error")
 				return

@@ -1,5 +1,3 @@
-// Package wshub provides WebSocket connection management with support
-// for rooms, broadcasting, and message handling.
 package wshub
 
 import (
@@ -161,15 +159,16 @@ func AllowSameOrigin(r *http.Request) bool {
 
 // AllowOrigins returns a CheckOrigin function that allows specific origins.
 func AllowOrigins(origins ...string) func(r *http.Request) bool {
-	allowed := make(map[string]bool)
+	allowed := make(map[string]struct{}, len(origins))
 	for _, o := range origins {
-		allowed[o] = true
+		allowed[o] = struct{}{}
 	}
 	return func(r *http.Request) bool {
 		origin := r.Header.Get("Origin")
 		if origin == "" {
 			return true
 		}
-		return allowed[origin]
+		_, ok := allowed[origin]
+		return ok
 	}
 }
