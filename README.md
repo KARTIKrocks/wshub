@@ -5,7 +5,7 @@ A production-ready, reusable WebSocket package for Go with support for rooms, br
 ## Features
 
 - **Production-Ready**: Proper concurrency, graceful shutdown, error handling
-- **Pluggable**: Bring your own logger, metrics, codec
+- **Pluggable**: Bring your own logger, metrics
 - **Middleware System**: Chain handlers with custom logic
 - **Lifecycle Hooks**: Hook into connection, message, and room events
 - **Room Support**: Group clients into rooms for targeted broadcasting
