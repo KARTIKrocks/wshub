@@ -1,5 +1,10 @@
 # wshub
 
+
+[![Go Reference](https://pkg.go.dev/badge/github.com/KARTIKrocks/wshub.svg)](https://pkg.go.dev/github.com/KARTIKrocks/wshub)
+[![CI](https://github.com/KARTIKrocks/wshub/actions/workflows/ci.yml/badge.svg)](https://github.com/KARTIKrocks/wshub/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/KARTIKrocks/wshub)](https://goreportcard.com/report/github.com/KARTIKrocks/wshub)
+
 A production-ready, reusable WebSocket package for Go with support for rooms, broadcasting, middleware, hooks, and extensibility.
 
 ## Features
