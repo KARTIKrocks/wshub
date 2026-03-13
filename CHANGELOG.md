@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-03-13
+
+### Added
+
+- `gocyclo` linter with max complexity 15 in `.golangci.yml`
+- Dependabot configuration for Go modules and GitHub Actions (weekly schedule)
+- GitHub issue templates for bug reports and feature requests
+- Pull request template with checklist
+- CodeQL security scanning workflow (push, PR, weekly schedule)
+- Code coverage reporting with Codecov integration
+- Coverage badge in README
+
+### Changed
+
+- CI workflow now restricts `permissions` to `contents: read`
+- Bench job limited to `main` branch pushes only (skipped on PRs)
+
 ## [0.0.1] - 2026-02-20
 
 ### Added
@@ -31,4 +48,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Examples: simple echo server, chat with rooms, JWT auth, metrics endpoint
 - Documentation: README, QUICKSTART, SCALABILITY, CONTRIBUTING
 
+[1.0.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.0.0
 [0.0.1]: https://github.com/KARTIKrocks/wshub/releases/tag/v0.0.1
