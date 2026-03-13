@@ -9,8 +9,11 @@ linters:
     - ineffassign
     - misspell
     - gocritic
+    - gocyclo
     - revive
   settings:
+    gocyclo:
+      min-complexity: 15
     revive:
       rules:
         - name: exported
