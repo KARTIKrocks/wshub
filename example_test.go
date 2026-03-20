@@ -1,11 +1,9 @@
 package wshub_test
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/KARTIKrocks/wshub"
 )
@@ -31,18 +29,11 @@ func ExampleNewHub_withOptions() {
 
 func ExampleHub_HandleHTTP() {
 	hub := wshub.NewHub()
-	go hub.Run()
 
-	http.Handle("/ws", hub.HandleHTTP())
-	// Now start: http.ListenAndServe(":8080", nil)
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
-	defer cancel()
-	hub.Shutdown(ctx)
-
-	fmt.Println("handler registered")
+	handler := hub.HandleHTTP()
+	fmt.Println("handler is nil:", handler == nil)
 	// Output:
-	// handler registered
+	// handler is nil: false
 }
 
 func ExampleNewMessage() {
