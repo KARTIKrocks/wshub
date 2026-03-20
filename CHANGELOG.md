@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-03-20
+
+### Added
+
+- Tests for `SendToUser`, `BroadcastBinary`, `RoomClients`, `BroadcastToRoomExcept`, parallel broadcast paths
+- Tests for buffer-full scenarios (`trySend`, `SendMessage`), `BeforeConnect` hook rejection, connection limits
+- Tests for `readPump` message handlers, `BeforeMessage`/`AfterMessage` hooks, message rejection
+- Tests for `OnClose` callback, `OnMessage` callback, `SendJSON` error path, `SendWithContext` closed client
+- Tests for room hooks (`BeforeRoomJoin`, `AfterRoomJoin`, `BeforeRoomLeave`, `AfterRoomLeave`)
+- Tests for lifecycle hooks (`AfterConnect`, `BeforeDisconnect`, `AfterDisconnect`)
+- Tests for `UpdateClientUserID`, `JoinRoom` (already in room, client not found, max rooms), `LeaveRoom` (not in room)
+- Tests for `HandleHTTP` upgrade, `BroadcastWithContext` cancellation, `BroadcastJSON` error path
+- Fuzz tests for message parsing, JSON creation, router dispatch, and middleware chain
+- Example tests for `go doc` integration (hub, message, router, middleware, config, limits, metrics, hooks)
+- Benchmark suite covering broadcasts, client sends, lookups, rooms, metadata, and middleware
+- Codecov configuration (`codecov.yml`) with patch target 80% and project threshold 2%
+- `.gitignore` for build artifacts and coverage files
+- Update README docs
+- `make cover` target for HTML coverage reports
+- `make fuzz` target for fuzz testing
+- `make build`, `make test-v`, `make clean` targets
+- `make setup` with conditional tool installation
+
+### Changed
+
+- Pinned golangci-lint to v2.10.1 in Makefile for reproducible builds
+- `make lint` now auto-installs linter via `setup` dependency
+- README "JavaScript Client" section replaced with full HTML test client
+- CONTRIBUTING.md: fixed clone URL to use fork, corrected Go version to 1.22+
+
+### Removed
+
+- `QUICKSTART.md` (content consolidated into README)
+
 ## [1.0.0] - 2026-03-13
 
 ### Added
@@ -48,5 +82,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Examples: simple echo server, chat with rooms, JWT auth, metrics endpoint
 - Documentation: README, QUICKSTART, SCALABILITY, CONTRIBUTING
 
+[1.0.1]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.0.1
 [1.0.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.0.0
 [0.0.1]: https://github.com/KARTIKrocks/wshub/releases/tag/v0.0.1
