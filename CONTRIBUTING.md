@@ -5,7 +5,7 @@ Thanks for your interest in contributing!
 ## Getting Started
 
 1. Fork the repository
-2. Clone your fork: `git clone https://github.com/KARTIKrocks/wshub.git`
+2. Clone your fork: `git clone https://github.com/<your-username>/wshub.git`
 3. Create a branch: `git checkout -b my-feature`
 4. Make your changes
 5. Run checks: `make ci`
@@ -15,7 +15,7 @@ Thanks for your interest in contributing!
 
 ### Prerequisites
 
-- Go 1.26+
+- Go 1.22+
 - golangci-lint v2
 
 ### Running Tests

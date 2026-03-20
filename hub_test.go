@@ -2,6 +2,7 @@ package wshub
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -562,5 +563,708 @@ func TestHubRoomFull(t *testing.T) {
 	err := hub.JoinRoom(clients[1], "full-room")
 	if err != ErrRoomFull {
 		t.Errorf("got %v, want ErrRoomFull", err)
+	}
+}
+
+func TestHubSendToUser(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	conn := dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+	client.SetUserID("user-1")
+
+	hub.SendToUser("user-1", []byte("user-msg"))
+
+	conn.SetReadDeadline(time.Now().Add(time.Second))
+	_, msg, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(msg) != "user-msg" {
+		t.Errorf("got %q, want %q", msg, "user-msg")
+	}
+
+	// SendToUser for nonexistent user should be a no-op (no panic)
+	hub.SendToUser("nonexistent", []byte("noop"))
+}
+
+func TestHubBroadcastBinary(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	conn := dial()
+	time.Sleep(50 * time.Millisecond)
+
+	hub.BroadcastBinary([]byte{0xDE, 0xAD})
+
+	conn.SetReadDeadline(time.Now().Add(time.Second))
+	msgType, msg, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if msgType != websocket.BinaryMessage {
+		t.Errorf("message type = %d, want binary (%d)", msgType, websocket.BinaryMessage)
+	}
+	if len(msg) != 2 || msg[0] != 0xDE || msg[1] != 0xAD {
+		t.Errorf("got %v, want [0xDE 0xAD]", msg)
+	}
+}
+
+func TestHubRoomClients(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	dial()
+	dial()
+	time.Sleep(50 * time.Millisecond)
+
+	clients := hub.Clients()
+	if len(clients) < 2 {
+		t.Fatalf("expected 2 clients, got %d", len(clients))
+	}
+
+	hub.JoinRoom(clients[0], "rc-room")
+	hub.JoinRoom(clients[1], "rc-room")
+
+	roomClients := hub.RoomClients("rc-room")
+	if len(roomClients) != 2 {
+		t.Errorf("RoomClients = %d, want 2", len(roomClients))
+	}
+
+	// Nonexistent room returns nil
+	if got := hub.RoomClients("nonexistent"); got != nil {
+		t.Errorf("RoomClients(nonexistent) = %v, want nil", got)
+	}
+}
+
+func TestHubBroadcastToRoomExcept(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	conn1 := dial()
+	conn2 := dial()
+	time.Sleep(50 * time.Millisecond)
+
+	clients := hub.Clients()
+	if len(clients) < 2 {
+		t.Fatalf("expected 2 clients, got %d", len(clients))
+	}
+
+	hub.JoinRoom(clients[0], "except-room")
+	hub.JoinRoom(clients[1], "except-room")
+
+	// Broadcast except clients[0]
+	hub.BroadcastToRoomExcept("except-room", []byte("except-msg"), clients[0])
+
+	// One of the connections should receive the message, the other should not.
+	// We can't map client index to conn index, so just verify no panic and
+	// at least one connection gets the message.
+	received := 0
+	for _, conn := range []*websocket.Conn{conn1, conn2} {
+		conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+		_, _, err := conn.ReadMessage()
+		if err == nil {
+			received++
+		}
+	}
+	if received != 1 {
+		t.Errorf("expected exactly 1 connection to receive message, got %d", received)
+	}
+
+	// Nonexistent room
+	err := hub.BroadcastToRoomExcept("nonexistent", []byte("test"))
+	if err != ErrRoomNotFound {
+		t.Errorf("got %v, want ErrRoomNotFound", err)
+	}
+}
+
+func TestHubParallelBroadcast(t *testing.T) {
+	hub := NewHub(
+		WithParallelBroadcast(2), // small batch size to trigger parallel path
+	)
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	// Create enough clients to exceed batch size
+	var conns []*websocket.Conn
+	for range 5 {
+		conns = append(conns, dial())
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	if hub.ClientCount() != 5 {
+		t.Fatalf("ClientCount = %d, want 5", hub.ClientCount())
+	}
+
+	// Test parallel Broadcast
+	hub.Broadcast([]byte("parallel-msg"))
+
+	for i, conn := range conns {
+		conn.SetReadDeadline(time.Now().Add(time.Second))
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("conn[%d] read: %v", i, err)
+		}
+		if string(msg) != "parallel-msg" {
+			t.Errorf("conn[%d] got %q, want %q", i, msg, "parallel-msg")
+		}
+	}
+
+	// Test parallel BroadcastExcept
+	clients := hub.Clients()
+	hub.BroadcastExcept([]byte("except-parallel"), clients[0])
+
+	// At least some connections should receive
+	received := 0
+	for _, conn := range conns {
+		conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+		_, _, err := conn.ReadMessage()
+		if err == nil {
+			received++
+		}
+	}
+	if received < 3 {
+		t.Errorf("expected at least 3 to receive except-parallel, got %d", received)
+	}
+}
+
+func TestHubParallelBroadcastToRoom(t *testing.T) {
+	hub := NewHub(
+		WithParallelBroadcast(2),
+	)
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	var conns []*websocket.Conn
+	for range 5 {
+		conns = append(conns, dial())
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	clients := hub.Clients()
+	for _, c := range clients {
+		hub.JoinRoom(c, "parallel-room")
+	}
+
+	hub.BroadcastToRoom("parallel-room", []byte("room-parallel"))
+
+	for i, conn := range conns {
+		conn.SetReadDeadline(time.Now().Add(time.Second))
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("conn[%d] read: %v", i, err)
+		}
+		if string(msg) != "room-parallel" {
+			t.Errorf("conn[%d] got %q, want %q", i, msg, "room-parallel")
+		}
+	}
+}
+
+func TestHubTrySendBufferFull(t *testing.T) {
+	hub := NewHub()
+
+	// Create a client with a tiny send buffer
+	client := &Client{
+		ID:       "test-full",
+		hub:      hub,
+		send:     make(chan sendItem, 1),
+		metadata: make(map[string]any),
+		rooms:    make(map[string]struct{}),
+	}
+
+	// Fill the buffer
+	client.send <- sendItem{data: []byte("fill")}
+
+	// trySend should not block — just drop the message
+	hub.trySend(client, sendItem{data: []byte("overflow")})
+
+	// Verify only the first message is in the buffer
+	item := <-client.send
+	if string(item.data) != "fill" {
+		t.Errorf("got %q, want %q", item.data, "fill")
+	}
+}
+
+func TestHubUpgradeConnectionBeforeConnectHook(t *testing.T) {
+	hub := NewHub(
+		WithHooks(Hooks{
+			BeforeConnect: func(r *http.Request) error {
+				return errors.New("rejected")
+			},
+		}),
+	)
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hub.UpgradeConnection(w, r)
+	}))
+	t.Cleanup(server.Close)
+
+	dialer := websocket.Dialer{}
+	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
+	_, resp, err := dialer.Dial(url, nil)
+	if err == nil {
+		t.Fatal("expected connection to be rejected")
+	}
+	if resp != nil && resp.StatusCode != http.StatusForbidden {
+		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+}
+
+func TestHubUpgradeConnectionLimit(t *testing.T) {
+	hub := NewHub(
+		WithLimits(DefaultLimits().WithMaxConnections(1)),
+	)
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, server := testDialer(t, hub)
+	dial()
+	time.Sleep(50 * time.Millisecond)
+
+	// Second connection should be rejected
+	dialer := websocket.Dialer{}
+	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
+	_, resp, err := dialer.Dial(url, nil)
+	if err == nil {
+		t.Fatal("expected connection to be rejected due to limit")
+	}
+	if resp != nil && resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusServiceUnavailable)
+	}
+}
+
+func TestHubJoinRoomAlreadyInRoom(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+	hub.JoinRoom(client, "dup-room")
+	err := hub.JoinRoom(client, "dup-room")
+	if err != ErrAlreadyInRoom {
+		t.Errorf("got %v, want ErrAlreadyInRoom", err)
+	}
+}
+
+func TestHubJoinRoomClientNotFound(t *testing.T) {
+	hub := NewHub()
+
+	fakeClient := &Client{
+		ID:       "fake",
+		hub:      hub,
+		metadata: make(map[string]any),
+		rooms:    make(map[string]struct{}),
+	}
+
+	err := hub.JoinRoom(fakeClient, "room")
+	if err != ErrClientNotFound {
+		t.Errorf("got %v, want ErrClientNotFound", err)
+	}
+}
+
+func TestHubLeaveRoomNotInRoom(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	dial()
+	dial()
+	time.Sleep(50 * time.Millisecond)
+
+	clients := hub.Clients()
+	if len(clients) < 2 {
+		t.Fatalf("expected 2 clients, got %d", len(clients))
+	}
+
+	// Create room with first client
+	hub.JoinRoom(clients[0], "leave-test")
+
+	// Second client tries to leave a room it never joined
+	err := hub.LeaveRoom(clients[1], "leave-test")
+	if err != ErrNotInRoom {
+		t.Errorf("got %v, want ErrNotInRoom", err)
+	}
+
+	// Leave nonexistent room
+	err = hub.LeaveRoom(clients[0], "nonexistent")
+	if err != ErrRoomNotFound {
+		t.Errorf("got %v, want ErrRoomNotFound", err)
+	}
+}
+
+func TestHubMaxRoomsPerClient(t *testing.T) {
+	hub := NewHub(
+		WithLimits(DefaultLimits().WithMaxRoomsPerClient(1)),
+	)
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+	hub.JoinRoom(client, "room1")
+	err := hub.JoinRoom(client, "room2")
+	if err != ErrMaxRoomsReached {
+		t.Errorf("got %v, want ErrMaxRoomsReached", err)
+	}
+}
+
+func TestHubBroadcastWithContextCanceled(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	// Create a client with unbuffered send channel to block
+	client := &Client{
+		ID:       "block-test",
+		hub:      hub,
+		send:     make(chan sendItem), // unbuffered
+		metadata: make(map[string]any),
+		rooms:    make(map[string]struct{}),
+	}
+
+	// Manually register it in the hub's snapshot
+	hub.mu.Lock()
+	hub.clients[client] = struct{}{}
+	hub.mu.Unlock()
+	hub.updateClientsSnapshot()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	err := hub.BroadcastWithContext(ctx, []byte("should-fail"))
+	if err != context.Canceled {
+		t.Errorf("got %v, want context.Canceled", err)
+	}
+
+	// Clean up
+	hub.mu.Lock()
+	delete(hub.clients, client)
+	hub.mu.Unlock()
+}
+
+func TestHubUpdateClientUserID(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+
+	// Set initial user ID
+	client.SetUserID("user-a")
+	got, ok := hub.GetClientByUserID("user-a")
+	if !ok || got != client {
+		t.Error("expected client under user-a")
+	}
+
+	// Change user ID
+	client.SetUserID("user-b")
+	_, ok = hub.GetClientByUserID("user-a")
+	if ok {
+		t.Error("user-a should be removed from index")
+	}
+	got, ok = hub.GetClientByUserID("user-b")
+	if !ok || got != client {
+		t.Error("expected client under user-b")
+	}
+
+	// Clear user ID
+	client.SetUserID("")
+	_, ok = hub.GetClientByUserID("user-b")
+	if ok {
+		t.Error("user-b should be removed from index")
+	}
+}
+
+func TestHubHooksLifecycle(t *testing.T) {
+	var (
+		mu                     sync.Mutex
+		afterConnectCalled     bool
+		beforeDisconnectCalled bool
+		afterDisconnectCalled  bool
+	)
+
+	hub := NewHub(
+		WithHooks(Hooks{
+			AfterConnect: func(c *Client) {
+				mu.Lock()
+				afterConnectCalled = true
+				mu.Unlock()
+			},
+			BeforeDisconnect: func(c *Client) {
+				mu.Lock()
+				beforeDisconnectCalled = true
+				mu.Unlock()
+			},
+			AfterDisconnect: func(c *Client) {
+				mu.Lock()
+				afterDisconnectCalled = true
+				mu.Unlock()
+			},
+		}),
+	)
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	conn := dial()
+	time.Sleep(100 * time.Millisecond)
+
+	mu.Lock()
+	if !afterConnectCalled {
+		t.Error("AfterConnect hook not called")
+	}
+	mu.Unlock()
+
+	conn.Close()
+	time.Sleep(100 * time.Millisecond)
+
+	mu.Lock()
+	if !beforeDisconnectCalled {
+		t.Error("BeforeDisconnect hook not called")
+	}
+	if !afterDisconnectCalled {
+		t.Error("AfterDisconnect hook not called")
+	}
+	mu.Unlock()
+}
+
+func TestHubRoomHooks(t *testing.T) {
+	var (
+		mu              sync.Mutex
+		beforeJoinRoom  string
+		afterJoinRoom   string
+		beforeLeaveRoom string
+		afterLeaveRoom  string
+	)
+
+	hub := NewHub(
+		WithHooks(Hooks{
+			BeforeRoomJoin: func(c *Client, room string) error {
+				mu.Lock()
+				beforeJoinRoom = room
+				mu.Unlock()
+				return nil
+			},
+			AfterRoomJoin: func(c *Client, room string) {
+				mu.Lock()
+				afterJoinRoom = room
+				mu.Unlock()
+			},
+			BeforeRoomLeave: func(c *Client, room string) {
+				mu.Lock()
+				beforeLeaveRoom = room
+				mu.Unlock()
+			},
+			AfterRoomLeave: func(c *Client, room string) {
+				mu.Lock()
+				afterLeaveRoom = room
+				mu.Unlock()
+			},
+		}),
+	)
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+	hub.JoinRoom(client, "hook-room")
+	time.Sleep(50 * time.Millisecond)
+
+	mu.Lock()
+	if beforeJoinRoom != "hook-room" {
+		t.Errorf("BeforeRoomJoin room = %q, want hook-room", beforeJoinRoom)
+	}
+	if afterJoinRoom != "hook-room" {
+		t.Errorf("AfterRoomJoin room = %q, want hook-room", afterJoinRoom)
+	}
+	mu.Unlock()
+
+	hub.LeaveRoom(client, "hook-room")
+	time.Sleep(50 * time.Millisecond)
+
+	mu.Lock()
+	if beforeLeaveRoom != "hook-room" {
+		t.Errorf("BeforeRoomLeave room = %q, want hook-room", beforeLeaveRoom)
+	}
+	if afterLeaveRoom != "hook-room" {
+		t.Errorf("AfterRoomLeave room = %q, want hook-room", afterLeaveRoom)
+	}
+	mu.Unlock()
+}
+
+func TestHubBeforeRoomJoinReject(t *testing.T) {
+	hub := NewHub(
+		WithHooks(Hooks{
+			BeforeRoomJoin: func(c *Client, room string) error {
+				return errors.New("not allowed")
+			},
+		}),
+	)
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+	err := hub.JoinRoom(client, "blocked-room")
+	if err == nil || err.Error() != "not allowed" {
+		t.Errorf("got %v, want 'not allowed' error", err)
+	}
+}
+
+func TestHubHandleHTTPUpgrade(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	server := httptest.NewServer(hub.HandleHTTP())
+	t.Cleanup(server.Close)
+
+	dialer := websocket.Dialer{}
+	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
+	conn, _, err := dialer.Dial(url, nil)
+	if err != nil {
+		t.Fatalf("dial via HandleHTTP: %v", err)
+	}
+	conn.Close()
+	time.Sleep(50 * time.Millisecond)
+}
+
+func TestHubBroadcastJSONError(t *testing.T) {
+	hub := NewHub()
+
+	// channels (func) can't be marshaled to JSON
+	err := hub.BroadcastJSON(make(chan int))
+	if err == nil {
+		t.Error("expected error marshaling channel")
+	}
+}
+
+func TestHubAddToUserIndexWithUserID(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	dial()
+	dial()
+	time.Sleep(50 * time.Millisecond)
+
+	clients := hub.Clients()
+	if len(clients) < 2 {
+		t.Fatalf("expected 2 clients, got %d", len(clients))
+	}
+
+	// Both clients set same user ID
+	clients[0].SetUserID("shared-user")
+	clients[1].SetUserID("shared-user")
+
+	all := hub.GetClientsByUserID("shared-user")
+	if len(all) != 2 {
+		t.Errorf("GetClientsByUserID returned %d, want 2", len(all))
 	}
 }

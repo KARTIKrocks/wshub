@@ -1,0 +1,24 @@
+# Test and coverage
+*.out
+*.test
+*.prof
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Vendor
+vendor/

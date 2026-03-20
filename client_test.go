@@ -2,6 +2,7 @@ package wshub
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -392,6 +393,313 @@ func TestClientSendAfterClose(t *testing.T) {
 	if err != ErrConnectionClosed {
 		t.Errorf("Send after close = %v, want ErrConnectionClosed", err)
 	}
+}
+
+func TestClientSendJSONError(t *testing.T) {
+	hub, dial := setupClientTest(t)
+	dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+
+	// channels can't be marshaled to JSON
+	err := client.SendJSON(make(chan int))
+	if err == nil {
+		t.Error("expected error marshaling channel")
+	}
+}
+
+func TestClientSendMessageBufferFull(t *testing.T) {
+	hub := NewHub()
+
+	// Create a client with a tiny buffer
+	client := &Client{
+		ID:       "buf-full",
+		hub:      hub,
+		send:     make(chan sendItem, 1),
+		metadata: make(map[string]any),
+		rooms:    make(map[string]struct{}),
+	}
+
+	// Fill the buffer
+	_ = client.SendMessage(TextMessage, []byte("fill"))
+
+	// Next send should fail with ErrWriteTimeout
+	err := client.SendMessage(TextMessage, []byte("overflow"))
+	if err != ErrWriteTimeout {
+		t.Errorf("got %v, want ErrWriteTimeout", err)
+	}
+}
+
+func TestClientSendWithContextClosed(t *testing.T) {
+	hub := NewHub()
+
+	client := &Client{
+		ID:       "closed-ctx",
+		hub:      hub,
+		send:     make(chan sendItem, 1),
+		metadata: make(map[string]any),
+		rooms:    make(map[string]struct{}),
+		closed:   true,
+	}
+
+	ctx := context.Background()
+	err := client.SendWithContext(ctx, []byte("should-fail"))
+	if err != ErrConnectionClosed {
+		t.Errorf("got %v, want ErrConnectionClosed", err)
+	}
+}
+
+func TestClientReadPumpMessageHandler(t *testing.T) {
+	var (
+		mu       sync.Mutex
+		received []*Message
+	)
+
+	hub := NewHub(
+		WithMessageHandler(func(c *Client, m *Message) error {
+			mu.Lock()
+			received = append(received, m)
+			mu.Unlock()
+			return nil
+		}),
+	)
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hub.UpgradeConnection(w, r)
+	}))
+	t.Cleanup(server.Close)
+
+	dialer := websocket.Dialer{}
+	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
+	conn, _, err := dialer.Dial(url, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Send message from client side
+	conn.WriteMessage(websocket.TextMessage, []byte("hello-hub"))
+	time.Sleep(100 * time.Millisecond)
+
+	mu.Lock()
+	if len(received) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(received))
+	}
+	if string(received[0].Data) != "hello-hub" {
+		t.Errorf("got %q, want %q", received[0].Data, "hello-hub")
+	}
+	mu.Unlock()
+}
+
+func TestClientReadPumpWithHooks(t *testing.T) {
+	var (
+		mu           sync.Mutex
+		beforeCalled bool
+		afterCalled  bool
+		modifiedData string
+	)
+
+	hub := NewHub(
+		WithHooks(Hooks{
+			BeforeMessage: func(c *Client, m *Message) (*Message, error) {
+				mu.Lock()
+				beforeCalled = true
+				mu.Unlock()
+				// Modify message
+				return &Message{
+					Type:     m.Type,
+					Data:     []byte("modified"),
+					ClientID: m.ClientID,
+					Time:     m.Time,
+				}, nil
+			},
+			AfterMessage: func(c *Client, m *Message, err error) {
+				mu.Lock()
+				afterCalled = true
+				modifiedData = string(m.Data)
+				mu.Unlock()
+			},
+		}),
+		WithMessageHandler(func(c *Client, m *Message) error {
+			return nil
+		}),
+	)
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hub.UpgradeConnection(w, r)
+	}))
+	t.Cleanup(server.Close)
+
+	dialer := websocket.Dialer{}
+	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
+	conn, _, _ := dialer.Dial(url, nil)
+	defer conn.Close()
+
+	time.Sleep(50 * time.Millisecond)
+
+	conn.WriteMessage(websocket.TextMessage, []byte("original"))
+	time.Sleep(100 * time.Millisecond)
+
+	mu.Lock()
+	if !beforeCalled {
+		t.Error("BeforeMessage hook not called")
+	}
+	if !afterCalled {
+		t.Error("AfterMessage hook not called")
+	}
+	if modifiedData != "modified" {
+		t.Errorf("AfterMessage got data %q, want %q", modifiedData, "modified")
+	}
+	mu.Unlock()
+}
+
+func TestClientReadPumpBeforeMessageReject(t *testing.T) {
+	var (
+		mu            sync.Mutex
+		handlerCalled bool
+	)
+
+	hub := NewHub(
+		WithHooks(Hooks{
+			BeforeMessage: func(c *Client, m *Message) (*Message, error) {
+				return nil, errors.New("rejected")
+			},
+		}),
+		WithMessageHandler(func(c *Client, m *Message) error {
+			mu.Lock()
+			handlerCalled = true
+			mu.Unlock()
+			return nil
+		}),
+	)
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hub.UpgradeConnection(w, r)
+	}))
+	t.Cleanup(server.Close)
+
+	dialer := websocket.Dialer{}
+	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
+	conn, _, _ := dialer.Dial(url, nil)
+	defer conn.Close()
+
+	time.Sleep(50 * time.Millisecond)
+
+	conn.WriteMessage(websocket.TextMessage, []byte("should-be-rejected"))
+	time.Sleep(100 * time.Millisecond)
+
+	mu.Lock()
+	if handlerCalled {
+		t.Error("message handler should not be called when BeforeMessage rejects")
+	}
+	mu.Unlock()
+}
+
+func TestClientOnMessageCallback(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		client, _ := hub.UpgradeConnection(w, r)
+		var mu sync.Mutex
+		var got string
+		client.OnMessage(func(c *Client, m *Message) {
+			mu.Lock()
+			got = string(m.Data)
+			mu.Unlock()
+		})
+		// Store for assertion
+		client.SetMetadata("mu", &mu)
+		client.SetMetadata("got", &got)
+	}))
+	t.Cleanup(server.Close)
+
+	dialer := websocket.Dialer{}
+	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
+	conn, _, _ := dialer.Dial(url, nil)
+	defer conn.Close()
+
+	time.Sleep(50 * time.Millisecond)
+
+	conn.WriteMessage(websocket.TextMessage, []byte("callback-msg"))
+	time.Sleep(100 * time.Millisecond)
+
+	client := hub.Clients()[0]
+	muVal, _ := client.GetMetadata("mu")
+	gotVal, _ := client.GetMetadata("got")
+	mu := muVal.(*sync.Mutex)
+	got := gotVal.(*string)
+
+	mu.Lock()
+	if *got != "callback-msg" {
+		t.Errorf("OnMessage got %q, want %q", *got, "callback-msg")
+	}
+	mu.Unlock()
+}
+
+func TestClientOnCloseCallback(t *testing.T) {
+	var (
+		mu     sync.Mutex
+		called bool
+	)
+
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		client, _ := hub.UpgradeConnection(w, r)
+		client.OnClose(func(c *Client) {
+			mu.Lock()
+			called = true
+			mu.Unlock()
+		})
+	}))
+	t.Cleanup(server.Close)
+
+	dialer := websocket.Dialer{}
+	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
+	conn, _, _ := dialer.Dial(url, nil)
+
+	time.Sleep(50 * time.Millisecond)
+	conn.Close()
+	time.Sleep(100 * time.Millisecond)
+
+	mu.Lock()
+	if !called {
+		t.Error("OnClose callback not called")
+	}
+	mu.Unlock()
 }
 
 func TestClientRateLimit(t *testing.T) {
