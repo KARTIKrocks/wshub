@@ -2,6 +2,7 @@ package wshub
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -529,4 +530,228 @@ func TestNodeID(t *testing.T) {
 	if hubA.NodeID() == hubB.NodeID() {
 		t.Error("two hubs should have different NodeIDs")
 	}
+}
+
+type errorCloseAdapter struct {
+	memoryAdapter
+}
+
+func (a *errorCloseAdapter) Close() error {
+	return errors.New("adapter close error")
+}
+
+func TestHubShutdownAdapterCloseError(t *testing.T) {
+	adapter := &errorCloseAdapter{}
+	hub := NewHub(WithAdapter(adapter))
+	go hub.Run()
+
+	time.Sleep(50 * time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// Should log adapter close error but still complete shutdown.
+	err := hub.Shutdown(ctx)
+	if err != nil {
+		t.Logf("shutdown error (may be timeout): %v", err)
+	}
+}
+
+func TestBroadcastExceptWithType_Adapter(t *testing.T) {
+	bus := newMemoryBus()
+	adapter := bus.newAdapter()
+
+	hub := NewHub(WithAdapter(adapter))
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial := makeDialer(t, hub)
+	dial()
+	time.Sleep(50 * time.Millisecond)
+
+	clients := hub.Clients()
+	// BroadcastBinaryExcept with adapter exercises the adapter publish path.
+	hub.BroadcastBinaryExcept([]byte{0x01}, clients[0])
+}
+
+func TestHandleAdapterMessage_BroadcastExcept(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial := makeDialer(t, hub)
+	conn := dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+
+	// Send an AdapterBroadcastExcept message — exclude the client.
+	hub.handleAdapterMessage(AdapterMessage{
+		NodeID:          "remote-node",
+		Type:            AdapterBroadcastExcept,
+		MsgType:         websocket.TextMessage,
+		Data:            []byte("except-adapter"),
+		ExceptClientIDs: []string{client.ID},
+	})
+
+	_, err := readWithTimeout(conn, 200*time.Millisecond)
+	if err == nil {
+		t.Error("excluded client should not receive the message")
+	}
+}
+
+func TestHandleAdapterMessage_RoomBroadcast(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial := makeDialer(t, hub)
+	conn := dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+	_ = hub.JoinRoom(client, "adapter-room")
+
+	hub.handleAdapterMessage(AdapterMessage{
+		NodeID:  "remote-node",
+		Type:    AdapterRoom,
+		MsgType: websocket.TextMessage,
+		Data:    []byte("room-adapter"),
+		Room:    "adapter-room",
+	})
+
+	data, err := readWithTimeout(conn, time.Second)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(data) != "room-adapter" {
+		t.Errorf("got %q, want %q", data, "room-adapter")
+	}
+}
+
+func TestHandleAdapterMessage_RoomBroadcastExcept(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial := makeDialer(t, hub)
+	conn := dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+	_ = hub.JoinRoom(client, "adapter-except-room")
+
+	hub.handleAdapterMessage(AdapterMessage{
+		NodeID:          "remote-node",
+		Type:            AdapterRoomExcept,
+		MsgType:         websocket.TextMessage,
+		Data:            []byte("room-except"),
+		Room:            "adapter-except-room",
+		ExceptClientIDs: []string{client.ID},
+	})
+
+	_, err := readWithTimeout(conn, 200*time.Millisecond)
+	if err == nil {
+		t.Error("excluded client should not receive the room message")
+	}
+}
+
+func TestHandleAdapterMessage_SendToUser(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial := makeDialer(t, hub)
+	conn := dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+	_ = client.SetUserID("adapter-user")
+
+	hub.handleAdapterMessage(AdapterMessage{
+		NodeID:  "remote-node",
+		Type:    AdapterUser,
+		MsgType: websocket.TextMessage,
+		Data:    []byte("user-adapter"),
+		UserID:  "adapter-user",
+	})
+
+	data, err := readWithTimeout(conn, time.Second)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(data) != "user-adapter" {
+		t.Errorf("got %q, want %q", data, "user-adapter")
+	}
+}
+
+func TestHandleAdapterMessage_SendToClient(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial := makeDialer(t, hub)
+	conn := dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+
+	hub.handleAdapterMessage(AdapterMessage{
+		NodeID:   "remote-node",
+		Type:     AdapterClient,
+		MsgType:  websocket.TextMessage,
+		Data:     []byte("client-adapter"),
+		ClientID: client.ID,
+	})
+
+	data, err := readWithTimeout(conn, time.Second)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(data) != "client-adapter" {
+		t.Errorf("got %q, want %q", data, "client-adapter")
+	}
+}
+
+func TestHandleAdapterMessage_SendToClientNotFound(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	// Should not panic for nonexistent client.
+	hub.handleAdapterMessage(AdapterMessage{
+		NodeID:   "remote-node",
+		Type:     AdapterClient,
+		MsgType:  websocket.TextMessage,
+		Data:     []byte("nope"),
+		ClientID: "nonexistent",
+	})
 }

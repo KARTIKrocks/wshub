@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![codecov](https://codecov.io/gh/KARTIKrocks/wshub/branch/main/graph/badge.svg)](https://codecov.io/gh/KARTIKrocks/wshub)
 
-A production-ready, reusable WebSocket package for Go with support for rooms, broadcasting, middleware, hooks, and extensibility.
+A production-ready, scalable WebSocket package for Go with support for rooms, broadcasting, multi-node clustering, middleware, hooks, and extensibility.
 
 **[Documentation](https://kartikrocks.github.io/wshub/)** | **[API Reference](https://pkg.go.dev/github.com/KARTIKrocks/wshub)**
 

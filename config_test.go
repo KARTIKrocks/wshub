@@ -3,6 +3,7 @@ package wshub
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -162,5 +163,54 @@ func TestWithCheckOrigin(t *testing.T) {
 	c.CheckOrigin(r)
 	if !called {
 		t.Error("custom CheckOrigin was not called")
+	}
+}
+
+func TestValidateConfig_SmallBuffers(t *testing.T) {
+	c := Config{ReadBufferSize: 64, WriteBufferSize: 64}
+	warnings := validateConfig(c)
+	if len(warnings) != 2 {
+		t.Errorf("expected 2 warnings, got %d: %v", len(warnings), warnings)
+	}
+	for _, w := range warnings {
+		if !strings.Contains(w, "very small") {
+			t.Errorf("unexpected warning: %s", w)
+		}
+	}
+}
+
+func TestValidateConfig_NoWarnings(t *testing.T) {
+	c := DefaultConfig()
+	warnings := validateConfig(c)
+	if len(warnings) != 0 {
+		t.Errorf("expected 0 warnings, got %d: %v", len(warnings), warnings)
+	}
+}
+
+func TestValidateConfig_OnlyReadSmall(t *testing.T) {
+	c := Config{ReadBufferSize: 100, WriteBufferSize: 1024}
+	warnings := validateConfig(c)
+	if len(warnings) != 1 {
+		t.Errorf("expected 1 warning, got %d: %v", len(warnings), warnings)
+	}
+}
+
+func TestApplyConfigDefaults_PingPeriodClamp(t *testing.T) {
+	// PingPeriod >= PongWait should be clamped to 90% of PongWait.
+	c := applyConfigDefaults(Config{
+		PongWait:   10 * time.Second,
+		PingPeriod: 15 * time.Second, // larger than PongWait
+	})
+	expected := (10 * time.Second * 9) / 10
+	if c.PingPeriod != expected {
+		t.Errorf("PingPeriod = %v, want %v (90%% of PongWait)", c.PingPeriod, expected)
+	}
+}
+
+func TestAllowSameOrigin_InvalidURL(t *testing.T) {
+	r := httptest.NewRequest("GET", "/ws", nil)
+	r.Header.Set("Origin", "://invalid-url")
+	if AllowSameOrigin(r) {
+		t.Error("invalid URL origin should be rejected")
 	}
 }

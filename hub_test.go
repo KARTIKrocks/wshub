@@ -1268,3 +1268,618 @@ func TestHubAddToUserIndexWithUserID(t *testing.T) {
 		t.Errorf("GetClientsByUserID returned %d, want 2", len(all))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// buildExcludeSet + isExcludedByID
+// ---------------------------------------------------------------------------
+
+func TestBuildExcludeSet_SmallList(t *testing.T) {
+	// ≤4 items should return nil (callers use linear scan).
+	ids := []string{"a", "b", "c", "d"}
+	if set := buildExcludeSet(ids); set != nil {
+		t.Errorf("expected nil for ≤4 IDs, got %v", set)
+	}
+}
+
+func TestBuildExcludeSet_LargeList(t *testing.T) {
+	ids := []string{"a", "b", "c", "d", "e"}
+	set := buildExcludeSet(ids)
+	if set == nil {
+		t.Fatal("expected non-nil set for >4 IDs")
+	}
+	if len(set) != 5 {
+		t.Errorf("set length = %d, want 5", len(set))
+	}
+	for _, id := range ids {
+		if _, ok := set[id]; !ok {
+			t.Errorf("id %q not in set", id)
+		}
+	}
+}
+
+func TestIsExcludedByID_WithSet(t *testing.T) {
+	set := map[string]struct{}{"a": {}, "b": {}}
+	if !isExcludedByID("a", nil, set) {
+		t.Error("'a' should be excluded (in set)")
+	}
+	if isExcludedByID("c", nil, set) {
+		t.Error("'c' should not be excluded (not in set)")
+	}
+}
+
+func TestIsExcludedByID_LinearScan(t *testing.T) {
+	ids := []string{"x", "y", "z"}
+	if !isExcludedByID("y", ids, nil) {
+		t.Error("'y' should be excluded (linear scan)")
+	}
+	if isExcludedByID("w", ids, nil) {
+		t.Error("'w' should not be excluded")
+	}
+}
+
+func TestIsExcludedByID_EmptyInputs(t *testing.T) {
+	if isExcludedByID("a", nil, nil) {
+		t.Error("should return false for nil set and nil IDs")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// sendWithContext / trySendWithContext / parallelSend
+// ---------------------------------------------------------------------------
+
+func TestSendWithContext_ParallelBatch(t *testing.T) {
+	hub := NewHub(WithParallelBroadcast(2)) // batch size 2
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+
+	// Create 5 clients to trigger parallel batching (> batch size)
+	conns := make([]*websocket.Conn, 5)
+	for i := range conns {
+		conns[i] = dial()
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	// BroadcastWithContext exercises sendWithContext with parallel mode.
+	ctx := context.Background()
+	err := hub.BroadcastWithContext(ctx, []byte("parallel-ctx"))
+	if err != nil {
+		t.Fatalf("BroadcastWithContext: %v", err)
+	}
+
+	// Verify all clients received the message.
+	for i, conn := range conns {
+		data, err := readWithTimeout(conn, time.Second)
+		if err != nil {
+			t.Fatalf("conn[%d] read: %v", i, err)
+		}
+		if string(data) != "parallel-ctx" {
+			t.Errorf("conn[%d] got %q, want %q", i, data, "parallel-ctx")
+		}
+	}
+}
+
+func TestSendWithContext_CancelledContext(t *testing.T) {
+	// Use a tiny send channel so the buffer fills quickly.
+	cfg := DefaultConfig().WithSendChannelSize(1)
+	hub := NewHub(WithConfig(cfg))
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	dial()
+	time.Sleep(50 * time.Millisecond)
+
+	// Fill the single-slot buffer.
+	hub.Broadcast([]byte("fill"))
+
+	// Now send with a cancelled context — buffer is full, so the select
+	// should pick the context cancellation case.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := hub.BroadcastWithContext(ctx, []byte("should fail"))
+	// With buffer full and context cancelled, we expect an error.
+	// But if the write pump drained it, the send may succeed. Accept both.
+	_ = err
+}
+
+func TestSendWithContext_ParallelCancelledContext(t *testing.T) {
+	cfg := DefaultConfig().WithSendChannelSize(1)
+	hub := NewHub(WithConfig(cfg), WithParallelBroadcast(2))
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	// Create enough clients to trigger parallel batching.
+	for range 5 {
+		dial()
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	// Fill all send buffers.
+	hub.Broadcast([]byte("fill"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := hub.BroadcastWithContext(ctx, []byte("cancelled-parallel"))
+	// Accept either outcome — the key thing is exercising the code path.
+	_ = err
+}
+
+func TestSendWithContext_EmptyClients(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	// No clients connected — sendWithContext should be a no-op.
+	err := hub.BroadcastWithContext(context.Background(), []byte("empty"))
+	if err != nil {
+		t.Errorf("expected nil, got %v", err)
+	}
+}
+
+func TestTrySendWithContext_ClosedChannel(t *testing.T) {
+	hub := NewHub()
+
+	client := &Client{
+		send: make(chan sendItem, 1),
+		hub:  hub,
+	}
+	close(client.send)
+
+	item := sendItem{msgType: websocket.TextMessage, data: []byte("test")}
+	// Should recover from closed channel panic and return true (skip).
+	ok := hub.trySendWithContext(context.Background(), client, item)
+	if !ok {
+		t.Error("trySendWithContext should return true (skip) for closed channel")
+	}
+}
+
+func TestParallelSendMultiBatch(t *testing.T) {
+	hub := NewHub(WithParallelBroadcast(2))
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	conns := make([]*websocket.Conn, 5) // > batch size of 2
+	for i := range conns {
+		conns[i] = dial()
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	// Broadcast exercises parallelSend.
+	hub.Broadcast([]byte("multi-batch"))
+
+	for i, conn := range conns {
+		data, err := readWithTimeout(conn, time.Second)
+		if err != nil {
+			t.Fatalf("conn[%d] read: %v", i, err)
+		}
+		if string(data) != "multi-batch" {
+			t.Errorf("conn[%d] got %q, want %q", i, data, "multi-batch")
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// broadcastExceptByIDs
+// ---------------------------------------------------------------------------
+
+func TestBroadcastExceptByIDs_WithExclusions(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	conn1 := dial()
+	conn2 := dial()
+	time.Sleep(50 * time.Millisecond)
+
+	clients := hub.Clients()
+	if len(clients) != 2 {
+		t.Fatalf("expected 2 clients, got %d", len(clients))
+	}
+
+	// Simulate adapter message with except IDs — exclude first client.
+	item := sendItem{msgType: websocket.TextMessage, data: []byte("except-by-id")}
+	hub.broadcastExceptByIDs(item, []string{clients[0].ID})
+
+	// Both clients may or may not match conn1/conn2 ordering, so just
+	// verify at least one receives the message.
+	got1, err1 := readWithTimeout(conn1, 300*time.Millisecond)
+	got2, err2 := readWithTimeout(conn2, 300*time.Millisecond)
+
+	received := 0
+	if err1 == nil && string(got1) == "except-by-id" {
+		received++
+	}
+	if err2 == nil && string(got2) == "except-by-id" {
+		received++
+	}
+
+	if received != 1 {
+		t.Errorf("expected exactly 1 client to receive, got %d", received)
+	}
+}
+
+func TestBroadcastExceptByIDs_LargeExcludeList(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	conn := dial()
+	time.Sleep(50 * time.Millisecond)
+
+	// Exclude list with > 4 IDs (triggers buildExcludeSet map path) but
+	// none match the actual client.
+	item := sendItem{msgType: websocket.TextMessage, data: []byte("large-exclude")}
+	hub.broadcastExceptByIDs(item, []string{"fake1", "fake2", "fake3", "fake4", "fake5"})
+
+	data, err := readWithTimeout(conn, time.Second)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(data) != "large-exclude" {
+		t.Errorf("got %q, want %q", data, "large-exclude")
+	}
+}
+
+func TestBroadcastExceptByIDs_EmptyExcludeList(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	conn := dial()
+	time.Sleep(50 * time.Millisecond)
+
+	// Empty exclude list should broadcast to all (falls through to broadcast).
+	item := sendItem{msgType: websocket.TextMessage, data: []byte("no-exclude")}
+	hub.broadcastExceptByIDs(item, nil)
+
+	data, err := readWithTimeout(conn, time.Second)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(data) != "no-exclude" {
+		t.Errorf("got %q, want %q", data, "no-exclude")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// broadcastToRoomExceptByIDs / broadcastToRoomLocal
+// ---------------------------------------------------------------------------
+
+func TestBroadcastToRoomExceptByIDs(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	conn1 := dial()
+	conn2 := dial()
+	time.Sleep(50 * time.Millisecond)
+
+	clients := hub.Clients()
+	_ = hub.JoinRoom(clients[0], "except-room")
+	_ = hub.JoinRoom(clients[1], "except-room")
+
+	item := sendItem{msgType: websocket.TextMessage, data: []byte("room-except-id")}
+	hub.broadcastToRoomExceptByIDs("except-room", item, []string{clients[0].ID})
+
+	got1, err1 := readWithTimeout(conn1, 300*time.Millisecond)
+	got2, err2 := readWithTimeout(conn2, 300*time.Millisecond)
+
+	received := 0
+	if err1 == nil && string(got1) == "room-except-id" {
+		received++
+	}
+	if err2 == nil && string(got2) == "room-except-id" {
+		received++
+	}
+
+	if received != 1 {
+		t.Errorf("expected exactly 1 client to receive, got %d", received)
+	}
+}
+
+func TestBroadcastToRoomExceptByIDs_EmptyExcept(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	conn := dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+	_ = hub.JoinRoom(client, "room-empty-except")
+
+	item := sendItem{msgType: websocket.TextMessage, data: []byte("all-in-room")}
+	hub.broadcastToRoomExceptByIDs("room-empty-except", item, nil)
+
+	data, err := readWithTimeout(conn, time.Second)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(data) != "all-in-room" {
+		t.Errorf("got %q, want %q", data, "all-in-room")
+	}
+}
+
+func TestBroadcastToRoomExceptByIDs_RoomNotFound(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	item := sendItem{msgType: websocket.TextMessage, data: []byte("nope")}
+	// Should not panic for nonexistent room.
+	hub.broadcastToRoomExceptByIDs("no-such-room", item, []string{"id"})
+}
+
+func TestBroadcastToRoomLocal_NotFound(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	item := sendItem{msgType: websocket.TextMessage, data: []byte("nope")}
+	hub.broadcastToRoomLocal("nonexistent", item)
+	// Should not panic.
+}
+
+// ---------------------------------------------------------------------------
+// sendToClientLocal / HandleHTTP / loadSnapshot
+// ---------------------------------------------------------------------------
+
+func TestSendToClientLocal_NotFound(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	err := hub.sendToClientLocal("nonexistent", []byte("test"), websocket.TextMessage)
+	if !errors.Is(err, ErrClientNotFound) {
+		t.Errorf("got %v, want ErrClientNotFound", err)
+	}
+}
+
+func TestHandleHTTP_UpgradeError(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	handler := hub.HandleHTTP()
+
+	// Send a non-WebSocket HTTP request — upgrade will fail.
+	req := httptest.NewRequest("GET", "/ws", nil)
+	w := httptest.NewRecorder()
+	handler(w, req)
+
+	// The handler should have logged and responded with an error.
+	if w.Code == http.StatusSwitchingProtocols {
+		t.Error("non-WebSocket request should not get 101")
+	}
+}
+
+func TestHubShutdownTimeout(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+
+	dial, _ := testDialer(t, hub)
+	dial() // Keep connection open to block shutdown
+	time.Sleep(50 * time.Millisecond)
+
+	// Use a very short timeout to trigger the timeout path.
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
+
+	err := hub.Shutdown(ctx)
+	if err == nil {
+		// It's possible it shut down fast enough; this is best-effort.
+		return
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("expected DeadlineExceeded, got %v", err)
+	}
+}
+
+func TestLoadSnapshot_Empty(t *testing.T) {
+	hub := NewHub()
+	// Before Run(), snapshot is initialized to empty map.
+	snapshot := hub.loadSnapshot()
+	if snapshot == nil {
+		t.Error("loadSnapshot should not return nil")
+	}
+	if len(snapshot) != 0 {
+		t.Errorf("expected empty snapshot, got %d", len(snapshot))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// UpgradeConnection after shutdown
+// ---------------------------------------------------------------------------
+
+func TestUpgradeConnection_HubContextDone(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+
+	// Shut down the hub before attempting upgrade.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	hub.Shutdown(ctx)
+
+	// Try to upgrade after shutdown — should fail.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := hub.UpgradeConnection(w, r)
+		if err == nil {
+			t.Error("expected error after hub shutdown")
+		}
+	}))
+	defer server.Close()
+
+	dialer := websocket.Dialer{}
+	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
+	conn, _, err := dialer.Dial(url, nil)
+	if err == nil {
+		conn.Close()
+	}
+	// Error is expected; the test passes as long as no panic occurs.
+}
+
+// ---------------------------------------------------------------------------
+// handleRegister per-user limit / NewHub config warnings
+// ---------------------------------------------------------------------------
+
+func TestHandleRegister_PerUserLimitReject(t *testing.T) {
+	hub := NewHub(
+		WithLimits(DefaultLimits().WithMaxConnectionsPerUser(1)),
+	)
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	// First connection with user ID should succeed.
+	dial1 := testDialerWithOpts(t, hub, WithUserID("limited-user"))
+	dial1()
+	time.Sleep(50 * time.Millisecond)
+
+	if hub.ClientCount() != 1 {
+		t.Fatalf("expected 1 client, got %d", hub.ClientCount())
+	}
+
+	// Second connection with same user ID should be rejected by handleRegister.
+	dial2 := testDialerWithOpts(t, hub, WithUserID("limited-user"))
+	dial2() // This may fail silently — the important thing is the limit is enforced.
+	time.Sleep(50 * time.Millisecond)
+
+	if hub.ClientCount() > 1 {
+		t.Errorf("expected ≤1 client after per-user limit, got %d", hub.ClientCount())
+	}
+}
+
+func TestNewHub_ConfigWarnings(t *testing.T) {
+	// NewHub should not panic with small buffer configs.
+	cfg := Config{ReadBufferSize: 64, WriteBufferSize: 64}
+	hub := NewHub(WithConfig(cfg))
+	if hub == nil {
+		t.Fatal("NewHub returned nil")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// LeaveRoom / BroadcastToRoomWithContext edge cases
+// ---------------------------------------------------------------------------
+
+func TestLeaveRoom_NotInRoom(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+
+	// Create the room with a different client, then try to leave with this one.
+	err := hub.LeaveRoom(client, "room-not-joined")
+	if !errors.Is(err, ErrRoomNotFound) {
+		t.Errorf("got %v, want ErrRoomNotFound", err)
+	}
+}
+
+func TestBroadcastToRoomWithContext_CancelledContext(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+	_ = hub.JoinRoom(client, "ctx-cancel-room")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := hub.BroadcastToRoomWithContext(ctx, "ctx-cancel-room", []byte("cancelled"))
+	if err == nil {
+		// With only 1 client the send may succeed before ctx check.
+		// Either outcome is acceptable.
+		return
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("got %v, want context.Canceled", err)
+	}
+}

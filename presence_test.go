@@ -2,6 +2,7 @@ package wshub
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -316,5 +317,105 @@ func TestGlobalRoomCountSingleNode(t *testing.T) {
 	}
 	if got := hub.GlobalRoomCount("room1"); got != hub.RoomCount("room1") {
 		t.Errorf("GlobalRoomCount(%d) != RoomCount(%d)", got, hub.RoomCount("room1"))
+	}
+}
+
+func TestHandlePresenceMessage_BadJSON(t *testing.T) {
+	bus := newMemoryBus()
+	adapter := bus.newAdapter()
+
+	hub := NewHub(WithAdapter(adapter), WithPresence(100*time.Millisecond))
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	// Send garbage JSON — should log warning but not panic.
+	hub.handlePresenceMessage(AdapterMessage{
+		Type: AdapterPresence,
+		Data: []byte("{invalid json"),
+	})
+}
+
+func TestHandlePresenceMessage_NoPresenceCache(t *testing.T) {
+	// Hub without presence should bail out early.
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	hub.handlePresenceMessage(AdapterMessage{
+		Type: AdapterPresence,
+		Data: []byte(`{"nodeID":"x","clientCount":1,"rooms":{},"timestamp":1234567890}`),
+	})
+	// Should not panic — presenceCache is nil.
+}
+
+func TestHandlePresenceMessage_ValidJSON(t *testing.T) {
+	bus := newMemoryBus()
+	adapter := bus.newAdapter()
+
+	hub := NewHub(WithAdapter(adapter), WithPresence(100*time.Millisecond))
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	p := &nodePresence{
+		NodeID:      "remote-node",
+		ClientCount: 5,
+		Rooms:       map[string]int{"lobby": 3},
+		Timestamp:   time.Now().UnixMilli(),
+	}
+	data, _ := json.Marshal(p)
+
+	hub.handlePresenceMessage(AdapterMessage{
+		Type: AdapterPresence,
+		Data: data,
+	})
+
+	// Verify the remote node was cached.
+	hub.presenceMu.RLock()
+	stats, ok := hub.presenceCache["remote-node"]
+	hub.presenceMu.RUnlock()
+
+	if !ok {
+		t.Fatal("expected remote-node in presenceCache")
+	}
+	if stats.clientCount != 5 {
+		t.Errorf("clientCount = %d, want 5", stats.clientCount)
+	}
+}
+
+func TestPublishPresence_HeartbeatOnly(t *testing.T) {
+	bus := newMemoryBus()
+	adapter := bus.newAdapter()
+
+	hub := NewHub(WithAdapter(adapter), WithPresence(50*time.Millisecond))
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial := makeDialer(t, hub)
+	dial()
+	time.Sleep(50 * time.Millisecond)
+
+	// Wait for multiple presence ticks. The second+ tick with unchanged
+	// stats exercises the heartbeat-only path.
+	time.Sleep(200 * time.Millisecond)
+
+	// Just verify no panic and that global count still works.
+	if got := hub.GlobalClientCount(); got != 1 {
+		t.Errorf("GlobalClientCount = %d, want 1", got)
 	}
 }
