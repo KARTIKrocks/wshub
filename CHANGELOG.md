@@ -5,6 +5,67 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-03-23
+
+### Added
+
+- **Multi-node adapter pattern** (`Adapter` interface) for horizontal scaling via shared message bus
+- Redis adapter (`adapter/redis`) and NATS adapter (`adapter/nats`) as separate Go modules
+- `AdapterMessage` wire format with constants for broadcast, room, user, and client operations
+- **Presence gossip** (`WithPresence`) for cluster-wide client and room counts
+- `GlobalClientCount()` and `GlobalRoomCount(room)` methods for cross-node totals with automatic stale-node eviction
+- **Backpressure control** with `DropPolicy` (`DropNewest`, `DropOldest`) configurable via `WithDropPolicy`
+- `OnSendDropped` hook fired when a message is dropped due to a full send buffer
+- `WithAdapter`, `WithNodeID`, `WithPresence`, `WithHookTimeout`, `WithDropPolicy`, `WithoutHandlerLatency` options
+- `WithUserID` upgrade option for atomic user ID assignment during `UpgradeConnection`
+- `SendMessageWithContext` method for type-aware sends with context support
+- `NodeID()` accessor on Hub
+- `UpgradeOption` type for per-connection configuration
+- Config validation (`validateConfig`) with warnings for very small buffer sizes
+- `isChanSendPanic` helper to safely recover from sends on closed channels
+- Benchmarks for `SendToUser`, `SendToClient`, `GlobalClientCount`, `GlobalRoomCount`
+- Example tests for drop policy, node ID, global counts, handler latency, hook timeout
+- Tests for adapter, presence, backpressure, and expanded coverage suite
+- `done` channel on Client for clean writePump shutdown on unregister
+
+### Changed
+
+- **Registration is now synchronous** — `UpgradeConnection` blocks until the Run goroutine confirms acceptance, eliminating TOCTOU races on connection limits
+- `register` channel replaced with `registrationRequest`/`registrationResult` for synchronous handshake (buffered to 64)
+- **Rate limiter switched from fixed-window to token-bucket algorithm** for smoother throttling
+- **`BeforeDisconnect` hook now runs with a timeout** (default 5s, configurable via `WithHookTimeout`) to avoid blocking the Run loop
+- **Disconnect ordering**: secondary indexes (user index, rooms) are cleaned up before removing from primary client map; room leave hooks now fire on disconnect
+- `removeClientFromAllRooms` replaced by `removeClientFromAllRoomsWithHooks` — fires `BeforeRoomLeave`/`AfterRoomLeave` on disconnect
+- `SetUserID` race fix — `setClientUserID` performs limit check and index update atomically under `userIndexMu`
+- `addToUserIndex` now enforces `MaxConnectionsPerUser` and returns an error
+- `updateClientsSnapshot` no longer acquires `RLock` (runs exclusively in the single-threaded Run goroutine)
+- `loadSnapshot` helper with safe type assertion (replaces raw atomic.Value loads)
+- `CloseWithCode` now closes the send channel to signal writePump (deferred close frame) instead of writing directly
+- `MiddlewareChain.Execute` uses double-checked locking for thread-safe auto-build
+- `MetricsMiddleware` now records only latency and errors (message count/size tracked by readPump) to avoid double-counting
+- `DebugMetrics` latency fields protected by dedicated mutex instead of atomics; `errors` map uses `RWMutex`
+- `AllowSameOrigin` uses `url.Parse` for correct port handling
+- `applyConfigDefaults` auto-corrects `PingPeriod >= PongWait` to 90% of PongWait
+- `DefaultLimits()` simplified to zero-value struct
+- Hub `Shutdown` closes the adapter before waiting on goroutines
+- `HandleHTTP` now logs upgrade errors
+- Connection limit fast-path uses atomic `clientCount` to avoid locking `h.mu`
+- Lock ordering documented on Hub struct (`mu → roomsMu → Room.mu → Client.mu → userIndexMu`)
+- `deleteRoomIfEmpty` extracted as a helper with proper lock ordering
+- Client metadata nil-safe (`SetMetadata` lazy-inits, `GetMetadata` handles nil map)
+- `readPump` unregister uses select to avoid blocking when Run has exited
+- `wg.Add(1)` moved to `NewHub` to prevent race between `go hub.Run()` and `hub.Shutdown()`
+- Makefile `all` target now runs `fmt` first
+- Updated benchmark numbers in README (improved broadcast, new targeted-send and presence tables)
+
+### Removed
+
+- `ErrWriteTimeout` and `ErrReadTimeout` sentinels (replaced by `ErrSendBufferFull`)
+- `ErrClientAlreadyExists` sentinel (unused)
+- `canAcceptUserConnection` and `canAcceptConnection` helpers (logic moved into Run goroutine)
+- `Client.joinRoom` method (inlined into hub)
+- Fixed-window rate limiter fields (`msgCount`, `msgWindowStart`)
+
 ## [1.0.1] - 2026-03-20
 
 ### Added
@@ -82,6 +143,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Examples: simple echo server, chat with rooms, JWT auth, metrics endpoint
 - Documentation: README, QUICKSTART, SCALABILITY, CONTRIBUTING
 
+[1.1.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.1.0
 [1.0.1]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.0.1
 [1.0.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.0.0
 [0.0.1]: https://github.com/KARTIKrocks/wshub/releases/tag/v0.0.1

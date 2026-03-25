@@ -148,8 +148,10 @@ func TestMetricsMiddleware(t *testing.T) {
 	chain.Execute(nil, &Message{Data: []byte("hello")})
 
 	s := metrics.Stats()
-	if s.TotalMessages != 1 {
-		t.Errorf("TotalMessages = %d, want 1", s.TotalMessages)
+	// MetricsMiddleware no longer counts messages (readPump does that);
+	// it records latency and handler errors.
+	if s.AvgLatency <= 0 {
+		t.Error("AvgLatency should be > 0 after executing a handler")
 	}
 	if s.Errors["message_handling"] != 1 {
 		t.Errorf("message_handling errors = %d, want 1", s.Errors["message_handling"])

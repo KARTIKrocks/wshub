@@ -15,28 +15,33 @@ A production-ready, reusable WebSocket package for Go with support for rooms, br
 ## Features
 
 - **Production-Ready**: Proper concurrency, graceful shutdown, error handling
+- **Horizontally Scalable**: Multi-node support via adapter pattern (Redis, NATS, or custom)
 - **Pluggable**: Bring your own logger, metrics
 - **Middleware System**: Chain handlers with custom logic
-- **Lifecycle Hooks**: Hook into connection, message, and room events
+- **Lifecycle Hooks**: Hook into connection, message, room, and backpressure events
 - **Room Support**: Group clients into rooms for targeted broadcasting
 - **Metrics & Logging**: Built-in interfaces for observability
 - **Configurable**: Extensive configuration with builder pattern
 - **Limits & Rate Limiting**: Control connections, rooms, and message rates
+- **Backpressure Control**: Configurable drop policies with notification hooks
+- **Global Counts**: Cluster-wide client and room counts via presence gossip
 - **Zero Business Logic**: Pure infrastructure, bring your own logic
 
 ## Performance Highlights
 
 Zero-allocation broadcasting, nanosecond lookups — built for scale. ([Full benchmarks](#benchmarks))
 
-| Operation                | Scale             | Time    | Allocs |
-| ------------------------ | ----------------- | ------- | ------ |
-| `Broadcast`              | 100,000 clients   | 49.5 ms | 0      |
-| `Broadcast`              | 1,000,000 clients | 1.12 s  | 0      |
-| `GetClient`              | 1,000 clients     | 23.5 ns | 0      |
-| `GetClientByUserID`      | 100 users         | 66.6 ns | 0      |
-| Middleware chain (built) | 3 middlewares     | 7.1 ns  | 0      |
+| Operation                | Scale             | Time     | Allocs |
+| ------------------------ | ----------------- | -------- | ------ |
+| `Broadcast`              | 100,000 clients   | 25.7 ms  | 0      |
+| `Broadcast`              | 1,000,000 clients | 399 ms   | 0      |
+| `SendToClient`           | 1,000,000 clients | 113 ns   | 0      |
+| `SendToUser`             | 1,000,000 users   | 174 ns   | 1      |
+| `GetClient`              | 1,000 clients     | 16.1 ns  | 0      |
+| `GlobalClientCount`      | 500 nodes         | 3.6 μs   | 0      |
+| Middleware chain (built)  | 3 middlewares     | 12.4 ns  | 0      |
 
-> Message size has no impact on dispatch — 64 B and 64 KB both take 6.2 μs for 100 clients.
+> Message size has no impact on dispatch — 64 B and 64 KB both take 5.3 μs for 100 clients.
 
 ## Installation
 
@@ -431,6 +436,86 @@ limits := wshub.DefaultLimits().
 hub := wshub.NewHub(wshub.WithLimits(limits))
 ```
 
+## Multi-Node Scaling
+
+Scale horizontally by connecting multiple hub instances through a shared message bus. All broadcasts and targeted sends are automatically relayed across nodes.
+
+```go
+import wshubredis "github.com/KARTIKrocks/wshub/adapter/redis"
+
+rdb := goredis.NewClient(&goredis.Options{Addr: "localhost:6379"})
+adapter := wshubredis.New(rdb)
+
+hub := wshub.NewHub(
+    wshub.WithAdapter(adapter),
+    wshub.WithNodeID("pod-web-1"), // optional: stable ID for debugging
+)
+go hub.Run()
+```
+
+### Available Adapters
+
+| Adapter | Install                                             | Best For                     |
+| ------- | --------------------------------------------------- | ---------------------------- |
+| Redis   | `go get github.com/KARTIKrocks/wshub/adapter/redis` | Most deployments, easy setup |
+| NATS    | `go get github.com/KARTIKrocks/wshub/adapter/nats`  | Low-latency, high-throughput |
+| Custom  | Implement `wshub.Adapter` interface                 | Any message bus              |
+
+Adapters are separate Go modules -- importing the core `wshub` package never pulls in Redis or NATS dependencies.
+
+### What Gets Relayed Across Nodes
+
+| Operation                                                        | Cross-Node         |
+| ---------------------------------------------------------------- | ------------------ |
+| `Broadcast`, `BroadcastBinary`, `BroadcastText`, `BroadcastJSON` | Yes                |
+| `BroadcastExcept`                                                | Yes                |
+| `BroadcastToRoom`, `BroadcastToRoomExcept`                       | Yes                |
+| `SendToUser`                                                     | Yes                |
+| `SendToClient`                                                   | Yes                |
+| `JoinRoom`, `LeaveRoom`                                          | No (local per hub) |
+| `GetClient`, `ClientCount`                                       | No (local per hub) |
+
+### Global Counts (Presence)
+
+Enable presence gossip to get cluster-wide totals:
+
+```go
+hub := wshub.NewHub(
+    wshub.WithAdapter(adapter),
+    wshub.WithPresence(5 * time.Second), // publish stats every 5s
+)
+
+hub.GlobalClientCount()          // total across all nodes
+hub.GlobalRoomCount("general")   // room members across all nodes
+```
+
+Nodes that miss 3 consecutive heartbeats are automatically evicted from the totals.
+
+## Backpressure Control
+
+When a client's send buffer is full, configure how messages are handled:
+
+```go
+hub := wshub.NewHub(
+    // DropNewest (default): discard the new message
+    // DropOldest: evict the oldest queued message to make room
+    wshub.WithDropPolicy(wshub.DropOldest),
+
+    wshub.WithHooks(wshub.Hooks{
+        OnSendDropped: func(client *wshub.Client, data []byte) {
+            log.Printf("dropped %d bytes for client %s", len(data), client.ID)
+            // Options: disconnect slow client, log, queue externally
+            // client.Close()
+        },
+    }),
+)
+```
+
+| Policy       | Behavior                     | Best For                                         |
+| ------------ | ---------------------------- | ------------------------------------------------ |
+| `DropNewest` | Discards the new message     | Default, safe                                    |
+| `DropOldest` | Evicts oldest queued message | Real-time data (dashboards, tickers, game state) |
+
 ## Error Handling
 
 ```go
@@ -567,73 +652,97 @@ go test -bench=. -benchmem ./...
 
 | Operation               | Clients   | Time    | Allocs |
 | ----------------------- | --------- | ------- | ------ |
-| `Broadcast`             | 5,000     | 778 μs  | 0      |
-| `Broadcast`             | 100,000   | 49.5 ms | 0      |
-| `Broadcast`             | 1,000,000 | 1.12 s  | 0      |
-| `BroadcastToRoom`       | 5,000     | 754 μs  | 0      |
-| `BroadcastToRoom`       | 100,000   | 50.3 ms | 0      |
-| `BroadcastToRoom`       | 1,000,000 | 670 ms  | 0      |
-| `BroadcastExcept`       | 5,000     | 774 μs  | 0      |
-| `BroadcastExcept`       | 100,000   | 53.2 ms | 0      |
-| `BroadcastExcept`       | 1,000,000 | 647 ms  | 0      |
-| `BroadcastToRoomExcept` | 5,000     | 744 μs  | 0      |
-| `BroadcastToRoomExcept` | 100,000   | 51.1 ms | 0      |
-| `BroadcastToRoomExcept` | 1,000,000 | 826 ms  | 0      |
+| `Broadcast`             | 5,000     | 558 μs  | 0      |
+| `Broadcast`             | 100,000   | 25.7 ms | 0      |
+| `Broadcast`             | 1,000,000 | 399 ms  | 0      |
+| `BroadcastToRoom`       | 5,000     | 373 μs  | 1      |
+| `BroadcastToRoom`       | 100,000   | 22.1 ms | 1      |
+| `BroadcastToRoom`       | 1,000,000 | 272 ms  | 1      |
+| `BroadcastExcept`       | 5,000     | 371 μs  | 1      |
+| `BroadcastExcept`       | 100,000   | 26.2 ms | 1      |
+| `BroadcastExcept`       | 1,000,000 | 417 ms  | 1      |
+| `BroadcastToRoomExcept` | 5,000     | 399 μs  | 2      |
+| `BroadcastToRoomExcept` | 100,000   | 23.9 ms | 2      |
+| `BroadcastToRoomExcept` | 1,000,000 | 392 ms  | 2      |
+
+### Targeted Send (O(1) at any scale, zero allocations)
+
+| Operation      | Scale             | Time   | Allocs |
+| -------------- | ----------------- | ------ | ------ |
+| `SendToClient` | 1,000 clients     | 111 ns | 0      |
+| `SendToClient` | 100,000 clients   | 111 ns | 0      |
+| `SendToClient` | 1,000,000 clients | 113 ns | 0      |
+| `SendToUser`   | 1,000 users       | 170 ns | 1      |
+| `SendToUser`   | 100,000 users     | 175 ns | 1      |
+| `SendToUser`   | 1,000,000 users   | 174 ns | 1      |
+
+### Global Counts — Presence (zero allocations)
+
+| Operation          | Nodes | Time   | Allocs |
+| ------------------ | ----- | ------ | ------ |
+| `GlobalClientCount` | 5    | 55 ns  | 0      |
+| `GlobalClientCount` | 50   | 329 ns | 0      |
+| `GlobalClientCount` | 100  | 636 ns | 0      |
+| `GlobalClientCount` | 500  | 3.6 μs | 0      |
+| `GlobalRoomCount`   | 5    | 110 ns | 0      |
+| `GlobalRoomCount`   | 50   | 746 ns | 0      |
+| `GlobalRoomCount`   | 100  | 1.5 μs | 0      |
+| `GlobalRoomCount`   | 500  | 8.7 μs | 0      |
 
 ### Message size has no impact on dispatch
 
 | Payload | Time (100 clients) | Allocs |
 | ------- | ------------------ | ------ |
-| 64 B    | 6.2 μs             | 0      |
-| 512 B   | 6.2 μs             | 0      |
-| 4 KB    | 6.2 μs             | 0      |
-| 64 KB   | 6.2 μs             | 0      |
+| 64 B    | 5.4 μs             | 0      |
+| 512 B   | 5.3 μs             | 0      |
+| 4 KB    | 5.3 μs             | 0      |
+| 64 KB   | 5.5 μs             | 0      |
 
 ### Client & Room Lookups (zero allocations)
 
-| Operation                   | Time    | Allocs |
-| --------------------------- | ------- | ------ |
-| `GetClient` (1,000 clients) | 23.5 ns | 0      |
-| `ClientCount`               | 17.8 ns | 0      |
-| `GetClientByUserID`         | 66.6 ns | 0      |
-| `RoomExists`                | 22.5 ns | 0      |
-| `RoomCount`                 | 37.7 ns | 0      |
-| `GetMetadata`               | 22.8 ns | 0      |
-| `SetMetadata`               | 40.0 ns | 0      |
+| Operation                   | Time     | Allocs |
+| --------------------------- | -------- | ------ |
+| `GetClient` (1,000 clients) | 16.1 ns | 0      |
+| `ClientCount`               | 0.28 ns | 0      |
+| `GetClientByUserID`         | 49.6 ns | 0      |
+| `RoomExists`                | 16.2 ns | 0      |
+| `RoomCount`                 | 25.4 ns | 0      |
+| `GetMetadata`               | 17.0 ns | 0      |
+| `SetMetadata`               | 27.1 ns | 0      |
 
 ### Client Send
 
 | Operation     | Time   | Allocs |
 | ------------- | ------ | ------ |
-| `Send` (text) | 101 ns | 1      |
-| `SendJSON`    | 569 ns | 5      |
+| `Send` (text) | 71.6 ns | 1      |
+| `SendJSON`    | 411 ns  | 5      |
 
 ### Middleware Chain
 
-| Mode                 | Time   | Allocs |
-| -------------------- | ------ | ------ |
-| Built (cached)       | 7.1 ns | 0      |
-| Unbuilt (on-the-fly) | 171 ns | 3      |
+| Mode                 | Time    | Allocs |
+| -------------------- | ------- | ------ |
+| Built (cached)       | 12.4 ns | 0      |
+| Unbuilt (on-the-fly) | 15.1 ns | 0      |
 
-> Always call `Build()` on your middleware chain — it's **24x faster**.
+> Always call `Build()` on your middleware chain for best performance.
 
 ### Concurrent Access (parallel goroutines)
 
 | Operation                 | Time    | Allocs |
 | ------------------------- | ------- | ------ |
-| `GetClient`               | 32.9 ns | 0      |
-| `ClientCount`             | 31.8 ns | 0      |
-| `Metadata` (set+get)      | 93.2 ns | 0      |
-| `Broadcast` (100 clients) | 7.3 μs  | 111    |
+| `GetClient`               | 26.1 ns | 0      |
+| `ClientCount`             | 0.18 ns | 0      |
+| `Metadata` (set+get)      | 62.3 ns | 0      |
+| `Broadcast` (100 clients) | 5.0 μs  | 116    |
 
 ### Message Creation
 
-| Operation          | Time    | Allocs |
-| ------------------ | ------- | ------ |
-| `NewMessage`       | 173 ns  | 1      |
-| `NewTextMessage`   | 222 ns  | 2      |
-| `NewBinaryMessage` | 174 ns  | 1      |
-| `NewJSONMessage`   | 1.78 μs | 9      |
+| Operation          | Time   | Allocs |
+| ------------------ | ------ | ------ |
+| `NewMessage`       | 28.3 ns | 0      |
+| `NewTextMessage`   | 28.2 ns | 0      |
+| `NewBinaryMessage` | 27.9 ns | 0      |
+| `NewJSONMessage`   | 701 ns  | 9      |
 
 ## Thread Safety
 

@@ -22,3 +22,6 @@ Thumbs.db
 
 # Vendor
 vendor/
+
+# coverage
+coverage.*
