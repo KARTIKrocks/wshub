@@ -561,7 +561,7 @@ func TestHubRoomFull(t *testing.T) {
 
 	hub.JoinRoom(clients[0], "full-room")
 	err := hub.JoinRoom(clients[1], "full-room")
-	if err != ErrRoomFull {
+	if !errors.Is(err, ErrRoomFull) {
 		t.Errorf("got %v, want ErrRoomFull", err)
 	}
 }
@@ -970,7 +970,7 @@ func TestHubMaxRoomsPerClient(t *testing.T) {
 	client := hub.Clients()[0]
 	hub.JoinRoom(client, "room1")
 	err := hub.JoinRoom(client, "room2")
-	if err != ErrMaxRoomsReached {
+	if !errors.Is(err, ErrMaxRoomsReached) {
 		t.Errorf("got %v, want ErrMaxRoomsReached", err)
 	}
 }

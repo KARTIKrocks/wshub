@@ -1,7 +1,9 @@
 package wshub
 
 import (
+	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -69,33 +71,53 @@ func DefaultConfig() Config {
 // applyConfigDefaults fills zero-value fields in c with defaults from
 // DefaultConfig so that Config{ReadBufferSize: 4096} behaves identically
 // to DefaultConfig().WithBufferSizes(4096, 1024) for every unset field.
+// It also corrects invalid relationships (e.g. PingPeriod >= PongWait).
 func applyConfigDefaults(c Config) Config {
 	d := DefaultConfig()
-	if c.ReadBufferSize == 0 {
+	if c.ReadBufferSize <= 0 {
 		c.ReadBufferSize = d.ReadBufferSize
 	}
-	if c.WriteBufferSize == 0 {
+	if c.WriteBufferSize <= 0 {
 		c.WriteBufferSize = d.WriteBufferSize
 	}
-	if c.WriteWait == 0 {
+	if c.WriteWait <= 0 {
 		c.WriteWait = d.WriteWait
 	}
-	if c.PongWait == 0 {
+	if c.PongWait <= 0 {
 		c.PongWait = d.PongWait
 	}
-	if c.PingPeriod == 0 {
+	if c.PingPeriod <= 0 {
 		c.PingPeriod = d.PingPeriod
 	}
-	if c.MaxMessageSize == 0 {
+	if c.MaxMessageSize <= 0 {
 		c.MaxMessageSize = d.MaxMessageSize
 	}
-	if c.SendChannelSize == 0 {
+	if c.SendChannelSize <= 0 {
 		c.SendChannelSize = d.SendChannelSize
 	}
 	if c.CheckOrigin == nil {
 		c.CheckOrigin = d.CheckOrigin
 	}
+
+	// PingPeriod must be less than PongWait to avoid premature timeouts.
+	if c.PingPeriod >= c.PongWait {
+		c.PingPeriod = (c.PongWait * 9) / 10 // 90% of PongWait
+	}
+
 	return c
+}
+
+// validateConfig checks for configuration invariants that applyConfigDefaults
+// cannot silently fix. It returns a slice of human-readable warnings.
+func validateConfig(c Config) []string {
+	var warnings []string
+	if c.ReadBufferSize > 0 && c.ReadBufferSize < 128 {
+		warnings = append(warnings, fmt.Sprintf("ReadBufferSize (%d) is very small (< 128 bytes)", c.ReadBufferSize))
+	}
+	if c.WriteBufferSize > 0 && c.WriteBufferSize < 128 {
+		warnings = append(warnings, fmt.Sprintf("WriteBufferSize (%d) is very small (< 128 bytes)", c.WriteBufferSize))
+	}
+	return warnings
 }
 
 // WithBufferSizes returns a new config with the specified buffer sizes.
@@ -149,15 +171,26 @@ func AllowAllOrigins(r *http.Request) bool {
 }
 
 // AllowSameOrigin is a CheckOrigin function that only allows same-origin requests.
+// It parses the Origin header as a URL and compares the host (including port)
+// against the request's Host header, handling mismatched ports correctly.
+//
+// Requests without an Origin header are allowed because non-browser clients
+// (mobile apps, CLI tools) typically omit it. If your threat model requires
+// rejecting originless requests, use a custom CheckOrigin function.
 func AllowSameOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		return true
 	}
-	return origin == "http://"+r.Host || origin == "https://"+r.Host
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	return u.Host == r.Host
 }
 
 // AllowOrigins returns a CheckOrigin function that allows specific origins.
+// Requests without an Origin header are allowed (see AllowSameOrigin for rationale).
 func AllowOrigins(origins ...string) func(r *http.Request) bool {
 	allowed := make(map[string]struct{}, len(origins))
 	for _, o := range origins {
