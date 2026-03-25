@@ -65,12 +65,14 @@ type DebugMetrics struct {
 	totalMessageBytes int64 // atomic
 	totalRoomJoins    int64 // atomic
 	totalRoomLeaves   int64 // atomic
-	latencyTotal      int64 // atomic, nanoseconds
-	latencyCount      int64 // atomic
+	latencyMu         sync.Mutex
+	latencyTotal      int64 // nanoseconds, protected by latencyMu
+	latencyCount      int64 // protected by latencyMu
 
-	errorsMu sync.Mutex
+	errorsMu sync.RWMutex
 	errors   map[string]int64
 
+	startMu   sync.RWMutex
 	startTime time.Time
 }
 
@@ -100,14 +102,16 @@ func (d *DebugMetrics) RecordMessageSize(size int) {
 }
 
 func (d *DebugMetrics) RecordLatency(duration time.Duration) {
-	atomic.AddInt64(&d.latencyTotal, int64(duration))
-	atomic.AddInt64(&d.latencyCount, 1)
+	d.latencyMu.Lock()
+	d.latencyTotal += int64(duration)
+	d.latencyCount++
+	d.latencyMu.Unlock()
 }
 
 func (d *DebugMetrics) IncrementErrors(errorType string) {
 	d.errorsMu.Lock()
+	defer d.errorsMu.Unlock()
 	d.errors[errorType]++
-	d.errorsMu.Unlock()
 }
 
 func (d *DebugMetrics) IncrementRoomJoins() {
@@ -120,15 +124,21 @@ func (d *DebugMetrics) IncrementRoomLeaves() {
 
 // Stats returns a point-in-time snapshot of all metrics.
 func (d *DebugMetrics) Stats() DebugStats {
-	d.errorsMu.Lock()
+	d.errorsMu.RLock()
 	errCopy := make(map[string]int64, len(d.errors))
 	maps.Copy(errCopy, d.errors)
-	d.errorsMu.Unlock()
+	d.errorsMu.RUnlock()
 
+	d.latencyMu.Lock()
 	var avgLatency time.Duration
-	if count := atomic.LoadInt64(&d.latencyCount); count > 0 {
-		avgLatency = time.Duration(atomic.LoadInt64(&d.latencyTotal) / count)
+	if d.latencyCount > 0 {
+		avgLatency = time.Duration(d.latencyTotal / d.latencyCount)
 	}
+	d.latencyMu.Unlock()
+
+	d.startMu.RLock()
+	uptime := time.Since(d.startTime).Round(time.Second)
+	d.startMu.RUnlock()
 
 	return DebugStats{
 		ActiveConnections: atomic.LoadInt64(&d.activeConnections),
@@ -139,7 +149,7 @@ func (d *DebugMetrics) Stats() DebugStats {
 		TotalRoomLeaves:   atomic.LoadInt64(&d.totalRoomLeaves),
 		AvgLatency:        avgLatency,
 		Errors:            errCopy,
-		Uptime:            time.Since(d.startTime).Round(time.Second),
+		Uptime:            uptime,
 	}
 }
 
@@ -151,14 +161,18 @@ func (d *DebugMetrics) Reset() {
 	atomic.StoreInt64(&d.totalMessageBytes, 0)
 	atomic.StoreInt64(&d.totalRoomJoins, 0)
 	atomic.StoreInt64(&d.totalRoomLeaves, 0)
-	atomic.StoreInt64(&d.latencyTotal, 0)
-	atomic.StoreInt64(&d.latencyCount, 0)
+	d.latencyMu.Lock()
+	d.latencyTotal = 0
+	d.latencyCount = 0
+	d.latencyMu.Unlock()
 
 	d.errorsMu.Lock()
 	d.errors = make(map[string]int64)
 	d.errorsMu.Unlock()
 
+	d.startMu.Lock()
 	d.startTime = time.Now()
+	d.startMu.Unlock()
 }
 
 // String returns a human-readable summary of all metrics.

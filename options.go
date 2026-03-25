@@ -1,5 +1,7 @@
 package wshub
 
+import "time"
+
 // Option configures a Hub during construction.
 type Option func(*Hub)
 
@@ -53,5 +55,75 @@ func WithParallelBroadcast(batchSize int) Option {
 func WithMessageHandler(fn func(*Client, *Message) error) Option {
 	return func(h *Hub) {
 		h.onMessage = fn
+	}
+}
+
+// WithoutHandlerLatency disables the hub's automatic handler latency
+// recording. Use this when your message handler chain already includes
+// MetricsMiddleware to avoid double-counting latency.
+func WithoutHandlerLatency() Option {
+	return func(h *Hub) {
+		h.skipHandlerLatency = true
+	}
+}
+
+// WithDropPolicy sets the behavior when a client's send buffer is full.
+// The default is DropNewest which discards the new message. DropOldest
+// evicts the oldest queued message to make room for the new one.
+func WithDropPolicy(policy DropPolicy) Option {
+	return func(h *Hub) {
+		h.dropPolicy = policy
+	}
+}
+
+// WithNodeID sets a deterministic node identifier for this hub. By default a
+// random UUID is generated. Setting a stable ID (e.g., hostname or pod name)
+// makes logs and debugging easier in multi-node deployments.
+func WithNodeID(id string) Option {
+	return func(h *Hub) {
+		if id != "" {
+			h.nodeID = id
+		}
+	}
+}
+
+// WithHookTimeout sets the maximum time to wait for synchronous lifecycle
+// hooks (e.g. BeforeDisconnect) before proceeding. Default: 5s.
+func WithHookTimeout(timeout time.Duration) Option {
+	return func(h *Hub) {
+		if timeout > 0 {
+			h.hookTimeout = timeout
+		}
+	}
+}
+
+// WithAdapter sets the multi-node adapter for cross-node message delivery.
+// When configured, every broadcast and targeted send is relayed to other
+// nodes through the adapter, enabling horizontal scaling behind a load
+// balancer.
+func WithAdapter(adapter Adapter) Option {
+	return func(h *Hub) {
+		h.adapter = adapter
+	}
+}
+
+// WithPresence enables periodic presence broadcasting for multi-node stats.
+// Each hub publishes its local client and room counts at the given interval,
+// allowing GlobalClientCount and GlobalRoomCount to return cluster-wide totals.
+//
+// When interval is zero, the default of 5 seconds is used. Nodes that miss
+// 3 consecutive heartbeats are considered stale and evicted from the totals.
+//
+// Presence requires an adapter to be set via WithAdapter; without one it is a
+// no-op.
+func WithPresence(interval time.Duration) Option {
+	return func(h *Hub) {
+		if interval <= 0 {
+			interval = 5 * time.Second
+		}
+		h.presenceInterval = interval
+		h.presenceTTL = 3 * interval
+		// presenceCache is allocated lazily in Run() only when an adapter
+		// is also configured, avoiding a pointless allocation otherwise.
 	}
 }

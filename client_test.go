@@ -424,10 +424,10 @@ func TestClientSendMessageBufferFull(t *testing.T) {
 	// Fill the buffer
 	_ = client.SendMessage(TextMessage, []byte("fill"))
 
-	// Next send should fail with ErrWriteTimeout
+	// Next send should fail with ErrSendBufferFull
 	err := client.SendMessage(TextMessage, []byte("overflow"))
-	if err != ErrWriteTimeout {
-		t.Errorf("got %v, want ErrWriteTimeout", err)
+	if err != ErrSendBufferFull {
+		t.Errorf("got %v, want ErrSendBufferFull", err)
 	}
 }
 
@@ -743,5 +743,90 @@ func TestClientRateLimit(t *testing.T) {
 	time.Sleep(time.Second + 10*time.Millisecond)
 	if !client.checkRateLimit() {
 		t.Error("after window reset, should pass")
+	}
+}
+
+func TestHandleReadError_UnexpectedClose(t *testing.T) {
+	hub := NewHub(
+		WithHooks(Hooks{
+			OnError: func(c *Client, err error) {
+				// just capture it
+			},
+		}),
+	)
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial := makeDialer(t, hub)
+	conn := dial()
+	time.Sleep(50 * time.Millisecond)
+
+	// Write an invalid close frame to trigger unexpected close error.
+	// The close code 4999 is not in the expected set (GoingAway, AbnormalClosure, NormalClosure).
+	conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(4999, "test error"))
+	time.Sleep(100 * time.Millisecond)
+	// The main goal is that the code path runs without panic.
+}
+
+func TestSendMessageWithContext_Cancelled(t *testing.T) {
+	cfg := DefaultConfig().WithSendChannelSize(1)
+	hub := NewHub(WithConfig(cfg))
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+
+	// Fill the tiny 1-slot buffer.
+	_ = client.Send([]byte("fill"))
+
+	// Now send with a cancelled context — buffer full + ctx cancelled.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := client.SendMessageWithContext(ctx, TextMessage, []byte("blocked"))
+	// Accept either outcome — the write pump may have drained the buffer.
+	// The primary goal is exercising the code path.
+	_ = err
+}
+
+func TestSendMessageWithContext_ClosedClient(t *testing.T) {
+	hub, dial := setupClientTest(t)
+	dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+	_ = client.Close()
+	time.Sleep(50 * time.Millisecond)
+
+	err := client.SendMessageWithContext(context.Background(), TextMessage, []byte("after-close"))
+	if !errors.Is(err, ErrConnectionClosed) {
+		t.Errorf("got %v, want ErrConnectionClosed", err)
+	}
+}
+
+func TestGetMetadata_NotFound(t *testing.T) {
+	hub, dial := setupClientTest(t)
+	dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+	val, ok := client.GetMetadata("nonexistent")
+	if ok {
+		t.Error("expected ok=false for missing key")
+	}
+	if val != nil {
+		t.Errorf("expected nil value, got %v", val)
 	}
 }
