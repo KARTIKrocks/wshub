@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ThemeProvider } from './context/ThemeContext';
 import { VersionProvider } from './context/VersionContext';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
@@ -21,6 +22,7 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
+    <ThemeProvider>
     <VersionProvider>
       <div className="min-h-screen">
         <Navbar onMenuToggle={() => setMenuOpen((o) => !o)} menuOpen={menuOpen} />
@@ -62,5 +64,6 @@ export default function App() {
         </main>
       </div>
     </VersionProvider>
+    </ThemeProvider>
   );
 }

@@ -62,7 +62,7 @@ export default function VersionSelector() {
                       setOpen(false);
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
-                    className={`w-full flex items-center justify-between px-3 py-2 hover:bg-white/5 transition-colors text-left ${
+                    className={`w-full flex items-center justify-between px-3 py-2 hover:bg-overlay transition-colors text-left ${
                       isSelected ? 'bg-primary/10' : ''
                     }`}
                   >
@@ -76,7 +76,7 @@ export default function VersionSelector() {
                         {r.tag_name}
                       </span>
                       {isLatest && (
-                        <span className="text-[10px] font-medium bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded-full">
+                        <span className="text-[10px] font-medium bg-green-500/20 text-green-700 dark:text-green-400 px-1.5 py-0.5 rounded-full">
                           latest
                         </span>
                       )}

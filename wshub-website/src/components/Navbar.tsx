@@ -1,4 +1,5 @@
 import VersionSelector from './VersionSelector';
+import ThemeToggle from './ThemeToggle';
 import { useVersion } from '../context/VersionContext';
 
 interface NavbarProps {
@@ -41,6 +42,7 @@ export default function Navbar({ onMenuToggle, menuOpen }: NavbarProps) {
       <VersionSelector />
 
       <div className="flex-1" />
+      <ThemeToggle />
 
       <a
         href={goDocsUrl}
@@ -51,11 +53,12 @@ export default function Navbar({ onMenuToggle, menuOpen }: NavbarProps) {
         Go Docs
       </a>
 
+
       <a
         href={githubUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-text-muted hover:text-text transition-colors"
+        className="text-text-muted hover:text-text transition-colors ml-1"
         aria-label="GitHub repository"
       >
         <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">

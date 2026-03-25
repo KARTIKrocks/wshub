@@ -1,6 +1,26 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 @theme {
+  /* Light theme (default) */
+  --color-primary: #2563eb;
+  --color-primary-dark: #1d4ed8;
+  --color-bg: #ffffff;
+  --color-bg-card: #f1f5f9;
+  --color-bg-sidebar: #f8fafc;
+  --color-bg-nav: #ffffff;
+  --color-text: #334155;
+  --color-text-muted: #64748b;
+  --color-text-heading: #0f172a;
+  --color-border: #e2e8f0;
+  --color-accent: #0891b2;
+  --color-overlay: rgba(0, 0, 0, 0.04);
+  --color-overlay-hover: rgba(0, 0, 0, 0.08);
+}
+
+/* Dark theme overrides */
+[data-theme="dark"] {
   --color-primary: #3b82f6;
   --color-primary-dark: #2563eb;
   --color-bg: #0f172a;
@@ -12,6 +32,8 @@
   --color-text-heading: #f1f5f9;
   --color-border: #334155;
   --color-accent: #22d3ee;
+  --color-overlay: rgba(255, 255, 255, 0.05);
+  --color-overlay-hover: rgba(255, 255, 255, 0.1);
 }
 
 html {

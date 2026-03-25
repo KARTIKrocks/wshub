@@ -37,7 +37,7 @@ export default function Hero() {
         <code className="flex-1 text-sm font-mono text-accent">{installCmd}</code>
         <button
           onClick={handleCopy}
-          className="text-xs text-text-muted hover:text-text px-2 py-1 rounded bg-white/5 hover:bg-white/10 transition-colors"
+          className="text-xs text-text-muted hover:text-text px-2 py-1 rounded bg-overlay hover:bg-overlay-hover transition-colors"
         >
           {copied ? 'Copied!' : 'Copy'}
         </button>
