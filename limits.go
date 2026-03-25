@@ -25,7 +25,13 @@ type Limits struct {
 
 // DefaultLimits returns default limits (all unlimited).
 func DefaultLimits() Limits {
-	return Limits{}
+	return Limits{
+		MaxConnections:        0,
+		MaxConnectionsPerUser: 0,
+		MaxRoomsPerClient:     0,
+		MaxClientsPerRoom:     0,
+		MaxMessageRate:        0,
+	}
 }
 
 // WithMaxConnections sets the maximum connections limit.

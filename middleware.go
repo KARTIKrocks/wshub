@@ -1,10 +1,5 @@
 package wshub
 
-import (
-	"sync"
-	"time"
-)
-
 // HandlerFunc is a function that handles WebSocket messages.
 type HandlerFunc func(*Client, *Message) error
 
@@ -12,10 +7,7 @@ type HandlerFunc func(*Client, *Message) error
 type Middleware func(HandlerFunc) HandlerFunc
 
 // MiddlewareChain manages a chain of middlewares.
-// All mutations (Use) must happen before the first Execute call.
-// Execute is safe for concurrent use once the chain is built.
 type MiddlewareChain struct {
-	mu          sync.RWMutex
 	middlewares []Middleware
 	handler     HandlerFunc
 	built       HandlerFunc // cached composed handler
@@ -31,22 +23,16 @@ func NewMiddlewareChain(handler HandlerFunc) *MiddlewareChain {
 
 // Use adds a middleware to the chain.
 // Adding middleware invalidates any previously cached Build result.
-// Must not be called concurrently with Execute.
 func (m *MiddlewareChain) Use(middleware Middleware) *MiddlewareChain {
-	m.mu.Lock()
 	m.middlewares = append(m.middlewares, middleware)
 	m.built = nil // invalidate cache
-	m.mu.Unlock()
 	return m
 }
 
 // Build pre-computes the composed handler chain and caches it.
 // Subsequent calls to Execute will use the cached handler for better performance.
-// Must not be called concurrently with Use.
 // Returns the chain for method chaining.
 func (m *MiddlewareChain) Build() *MiddlewareChain {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	handler := m.handler
 	for i := len(m.middlewares) - 1; i >= 0; i-- {
 		handler = m.middlewares[i](handler)
@@ -56,31 +42,18 @@ func (m *MiddlewareChain) Build() *MiddlewareChain {
 }
 
 // Execute runs the middleware chain and final handler.
-// Automatically builds and caches the chain on first call if Build was not
-// called explicitly. Safe for concurrent use once the chain is built.
-// Uses double-checked locking to ensure only one goroutine builds.
+// If Build has been called, uses the cached composed handler.
 func (m *MiddlewareChain) Execute(client *Client, msg *Message) error {
-	m.mu.RLock()
-	built := m.built
-	m.mu.RUnlock()
-
-	if built != nil {
-		return built(client, msg)
+	if m.built != nil {
+		return m.built(client, msg)
 	}
 
-	// Upgrade to write lock and double-check before building.
-	m.mu.Lock()
-	if m.built == nil {
-		handler := m.handler
-		for i := len(m.middlewares) - 1; i >= 0; i-- {
-			handler = m.middlewares[i](handler)
-		}
-		m.built = handler
+	// Build chain on the fly
+	handler := m.handler
+	for i := len(m.middlewares) - 1; i >= 0; i-- {
+		handler = m.middlewares[i](handler)
 	}
-	built = m.built
-	m.mu.Unlock()
-
-	return built(client, msg)
+	return handler(client, msg)
 }
 
 // Built-in middleware examples
@@ -124,20 +97,14 @@ func RecoveryMiddleware(logger Logger) Middleware {
 	}
 }
 
-// MetricsMiddleware records handler-level metrics for message processing.
-// Note: message count and size are already tracked by the readPump, so this
-// middleware only records handler errors and processing latency to avoid
-// double-counting those. However, processing latency is also recorded
-// internally by the hub when a message handler is set via WithMessageHandler.
-// If you use MetricsMiddleware inside a chain passed to WithMessageHandler,
-// add WithoutHandlerLatency() to your hub options to disable the hub's
-// built-in latency recording and avoid double-counting.
+// MetricsMiddleware records metrics for message processing.
 func MetricsMiddleware(metrics MetricsCollector) Middleware {
 	return func(next HandlerFunc) HandlerFunc {
 		return func(client *Client, msg *Message) error {
-			start := time.Now()
+			metrics.IncrementMessages()
+			metrics.RecordMessageSize(len(msg.Data))
+
 			err := next(client, msg)
-			metrics.RecordLatency(time.Since(start))
 
 			if err != nil {
 				metrics.IncrementErrors("message_handling")

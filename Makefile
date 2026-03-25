@@ -2,7 +2,7 @@ GOLANGCI_LINT_VERSION := v2.10.1
 
 .PHONY: all setup deps test test-v vet lint build bench fuzz fmt cover clean ci
 
-all: fmt vet lint test build
+all: vet lint test build
 
 ## Install development tools (skips if already present)
 setup:

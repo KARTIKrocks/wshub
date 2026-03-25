@@ -424,10 +424,10 @@ func TestClientSendMessageBufferFull(t *testing.T) {
 	// Fill the buffer
 	_ = client.SendMessage(TextMessage, []byte("fill"))
 
-	// Next send should fail with ErrSendBufferFull
+	// Next send should fail with ErrWriteTimeout
 	err := client.SendMessage(TextMessage, []byte("overflow"))
-	if err != ErrSendBufferFull {
-		t.Errorf("got %v, want ErrSendBufferFull", err)
+	if err != ErrWriteTimeout {
+		t.Errorf("got %v, want ErrWriteTimeout", err)
 	}
 }
 

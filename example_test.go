@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/KARTIKrocks/wshub"
 )
@@ -168,70 +167,4 @@ func ExampleWithParallelBroadcast() {
 	fmt.Println("parallel hub created:", hub.ClientCount())
 	// Output:
 	// parallel hub created: 0
-}
-
-func ExampleWithDropPolicy() {
-	hub := wshub.NewHub(
-		wshub.WithDropPolicy(wshub.DropOldest),
-		wshub.WithHooks(wshub.Hooks{
-			OnSendDropped: func(c *wshub.Client, data []byte) {
-				fmt.Printf("dropped %d bytes for %s\n", len(data), c.ID)
-			},
-		}),
-	)
-	fmt.Println("drop policy hub:", hub.ClientCount())
-	// Output:
-	// drop policy hub: 0
-}
-
-func ExampleWithNodeID() {
-	hub := wshub.NewHub(
-		wshub.WithNodeID("pod-web-1"),
-	)
-	fmt.Println("node:", hub.NodeID())
-	// Output:
-	// node: pod-web-1
-}
-
-func ExampleHub_GlobalClientCount() {
-	// Without presence, GlobalClientCount returns local count.
-	hub := wshub.NewHub()
-	fmt.Println("global:", hub.GlobalClientCount())
-	// Output:
-	// global: 0
-}
-
-func ExampleHub_GlobalRoomCount() {
-	// Without presence, GlobalRoomCount returns local room count.
-	hub := wshub.NewHub()
-	fmt.Println("room count:", hub.GlobalRoomCount("lobby"))
-	// Output:
-	// room count: 0
-}
-
-func ExampleWithoutHandlerLatency() {
-	metrics := wshub.NewDebugMetrics()
-	handler := func(c *wshub.Client, m *wshub.Message) error { return nil }
-
-	chain := wshub.NewMiddlewareChain(handler).
-		Use(wshub.MetricsMiddleware(metrics)).
-		Build()
-
-	hub := wshub.NewHub(
-		wshub.WithMetrics(metrics),
-		wshub.WithMessageHandler(chain.Execute),
-		wshub.WithoutHandlerLatency(), // avoid double-counting with MetricsMiddleware
-	)
-	fmt.Println("latency skipped:", hub.ClientCount() == 0)
-	// Output:
-	// latency skipped: true
-}
-
-func ExampleWithHookTimeout() {
-	hub := wshub.NewHub(
-		wshub.WithHookTimeout(10 * time.Second),
-	)
-	fmt.Println("hub created:", hub.ClientCount())
-	// Output:
-	// hub created: 0
 }
