@@ -1,7 +1,11 @@
 import CodeBlock from '../components/CodeBlock';
 import ModuleSection from '../components/ModuleSection';
+import { useVersion } from '../hooks/useVersion';
 
 export default function LimitsDocs() {
+  const { minVersion } = useVersion();
+  const v110 = minVersion('v1.1.0');
+
   return (
     <ModuleSection
       id="limits"
@@ -35,10 +39,12 @@ hub := wshub.NewHub(
       {/* ── Rate Limiting ── */}
       <h3 id="limits-rate" className="text-lg font-semibold text-text-heading mt-8 mb-2">Rate Limiting</h3>
       <p className="text-text-muted mb-3">
-        Per-client message rate limiting with 1-second sliding windows:
+        {v110
+          ? 'Per-client message rate limiting using a token-bucket algorithm. Tokens refill at MaxMessageRate per second, capped at a burst of MaxMessageRate. This provides smoother throttling than fixed windows:'
+          : 'Per-client message rate limiting with 1-second sliding windows:'}
       </p>
       <CodeBlock code={`limits := wshub.DefaultLimits().
-    WithMaxMessageRate(100) // max 100 messages per second per client
+    WithMaxMessageRate(100) // ${v110 ? '100 tokens/sec, burst of 100' : 'max 100 messages per second per client'}
 
 // Complete limits example
 limits := wshub.DefaultLimits().

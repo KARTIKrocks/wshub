@@ -1,14 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
+import { useVersion } from '../hooks/useVersion';
 
 interface SidebarProps {
   open: boolean;
   onClose: () => void;
 }
 
+interface ChildItem {
+  id: string;
+  label: string;
+  minVersion?: string;
+}
+
 interface SectionItem {
   id: string;
   label: string;
-  children?: { id: string; label: string }[];
+  minVersion?: string;
+  children?: ChildItem[];
 }
 
 const sections: SectionItem[] = [
@@ -25,6 +33,8 @@ const sections: SectionItem[] = [
       { id: 'hub-options', label: 'Hub Options' },
       { id: 'hub-broadcasting', label: 'Broadcasting' },
       { id: 'hub-client-lookup', label: 'Client Lookup' },
+      { id: 'hub-upgrade', label: 'Upgrade Options', minVersion: 'v1.1.0' },
+      { id: 'hub-drop-policy', label: 'Drop Policy', minVersion: 'v1.1.0' },
       { id: 'hub-shutdown', label: 'Graceful Shutdown' },
     ],
   },
@@ -75,6 +85,28 @@ const sections: SectionItem[] = [
     ],
   },
   {
+    id: 'adapter',
+    label: 'Adapters',
+    minVersion: 'v1.1.0',
+    children: [
+      { id: 'adapter-interface', label: 'Adapter Interface' },
+      { id: 'adapter-message', label: 'Adapter Message' },
+      { id: 'adapter-redis', label: 'Redis Adapter' },
+      { id: 'adapter-nats', label: 'NATS Adapter' },
+      { id: 'adapter-how', label: 'How It Works' },
+    ],
+  },
+  {
+    id: 'presence',
+    label: 'Presence',
+    minVersion: 'v1.1.0',
+    children: [
+      { id: 'presence-enabling', label: 'Enabling Presence' },
+      { id: 'presence-global', label: 'Global Counts' },
+      { id: 'presence-example', label: 'Full Example' },
+    ],
+  },
+  {
     id: 'hooks',
     label: 'Hooks',
     children: [
@@ -121,21 +153,6 @@ const sections: SectionItem[] = [
   },
 ];
 
-// All navigable ids: section ids + sub-topic ids
-const allIds = sections.flatMap((s) =>
-  s.children ? [s.id, ...s.children.map((c) => c.id)] : [s.id]
-);
-
-// Map sub-topic id → parent section id
-const parentMap = new Map<string, string>();
-for (const s of sections) {
-  if (s.children) {
-    for (const c of s.children) {
-      parentMap.set(c.id, s.id);
-    }
-  }
-}
-
 function updateHash(id: string) {
   const url = new URL(window.location.href);
   if (id === 'top') {
@@ -149,6 +166,43 @@ function updateHash(id: string) {
 }
 
 export default function Sidebar({ open, onClose }: SidebarProps) {
+  const { minVersion } = useVersion();
+
+  // Filter sections and their children by minVersion
+  const filteredSections = useMemo(() => {
+    return sections
+      .filter((s) => !s.minVersion || minVersion(s.minVersion))
+      .map((s) => {
+        if (!s.children) return s;
+        const filteredChildren = s.children.filter(
+          (c) => !c.minVersion || minVersion(c.minVersion),
+        );
+        return { ...s, children: filteredChildren.length > 0 ? filteredChildren : undefined };
+      });
+  }, [minVersion]);
+
+  // All navigable ids: section ids + sub-topic ids
+  const allIds = useMemo(
+    () =>
+      filteredSections.flatMap((s) =>
+        s.children ? [s.id, ...s.children.map((c) => c.id)] : [s.id],
+      ),
+    [filteredSections],
+  );
+
+  // Map sub-topic id → parent section id
+  const parentMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of filteredSections) {
+      if (s.children) {
+        for (const c of s.children) {
+          map.set(c.id, s.id);
+        }
+      }
+    }
+    return map;
+  }, [filteredSections]);
+
   const [active, setActive] = useState(() => {
     const hash = window.location.hash.slice(1);
     return hash && document.getElementById(hash) ? hash : 'top';
@@ -157,7 +211,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     const hash = window.location.hash.slice(1);
     const parent = parentMap.get(hash);
     if (parent) return parent;
-    const section = sections.find((s) => s.id === hash);
+    const section = filteredSections.find((s) => s.id === hash);
     return section?.children ? hash : null;
   });
 
@@ -184,7 +238,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     if (parent) {
       setExpanded(parent);
     } else {
-      const section = sections.find((s) => s.id === id);
+      const section = filteredSections.find((s) => s.id === id);
       if (section?.children) {
         setExpanded(id);
       }
@@ -254,7 +308,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       if (scrollTimer.current) clearTimeout(scrollTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [allIds]);
 
   const handleClick = (id: string) => {
     isScrollingTo.current = id;
@@ -302,7 +356,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
         } md:translate-x-0`}
       >
         <nav className="p-4 space-y-0.5">
-          {sections.map((section) =>
+          {filteredSections.map((section) =>
             section.children ? (
               <div key={section.id}>
                 <button

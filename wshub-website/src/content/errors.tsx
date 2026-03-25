@@ -1,7 +1,11 @@
 import CodeBlock from '../components/CodeBlock';
 import ModuleSection from '../components/ModuleSection';
+import { useVersion } from '../hooks/useVersion';
 
 export default function ErrorsDocs() {
+  const { minVersion } = useVersion();
+  const v110 = minVersion('v1.1.0');
+
   return (
     <ModuleSection
       id="errors"
@@ -26,8 +30,13 @@ export default function ErrorsDocs() {
           </thead>
           <tbody>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">ErrConnectionClosed</td><td className="py-2 text-text-muted">Connection is already closed</td></tr>
-            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">ErrWriteTimeout</td><td className="py-2 text-text-muted">Write operation timed out</td></tr>
-            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">ErrReadTimeout</td><td className="py-2 text-text-muted">Read operation timed out</td></tr>
+            {v110 ? (<>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">ErrInvalidMessage</td><td className="py-2 text-text-muted">Invalid message received</td></tr>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">ErrSendBufferFull</td><td className="py-2 text-text-muted">Client's send buffer is full (returned by SendMessage)</td></tr>
+            </>) : (<>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">ErrWriteTimeout</td><td className="py-2 text-text-muted">Write operation timed out</td></tr>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">ErrReadTimeout</td><td className="py-2 text-text-muted">Read operation timed out</td></tr>
+            </>)}
           </tbody>
         </table>
       </div>
@@ -44,7 +53,7 @@ export default function ErrorsDocs() {
           </thead>
           <tbody>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">ErrClientNotFound</td><td className="py-2 text-text-muted">Client with given ID not found</td></tr>
-            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">ErrClientAlreadyExists</td><td className="py-2 text-text-muted">Client with given ID already registered</td></tr>
+            {!v110 && <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">ErrClientAlreadyExists</td><td className="py-2 text-text-muted">Client with given ID already registered</td></tr>}
           </tbody>
         </table>
       </div>
@@ -89,7 +98,29 @@ export default function ErrorsDocs() {
           </tbody>
         </table>
       </div>
-      <CodeBlock code={`// Check errors with errors.Is
+      {v110 ? (
+        <CodeBlock code={`// Check errors with errors.Is
+if errors.Is(err, wshub.ErrConnectionClosed) {
+    log.Println("Connection already closed")
+}
+
+if errors.Is(err, wshub.ErrSendBufferFull) {
+    log.Println("Client send buffer full, message dropped")
+}
+
+if errors.Is(err, wshub.ErrRateLimitExceeded) {
+    log.Println("Client sending too fast")
+}
+
+if errors.Is(err, wshub.ErrRoomFull) {
+    client.SendText("Room is full, try again later")
+}
+
+if errors.Is(err, wshub.ErrMaxConnectionsReached) {
+    log.Println("Server at capacity")
+}`} />
+      ) : (
+        <CodeBlock code={`// Check errors with errors.Is
 if errors.Is(err, wshub.ErrConnectionClosed) {
     log.Println("Connection already closed")
 }
@@ -105,6 +136,7 @@ if errors.Is(err, wshub.ErrRoomFull) {
 if errors.Is(err, wshub.ErrMaxConnectionsReached) {
     log.Println("Server at capacity")
 }`} />
+      )}
     </ModuleSection>
   );
 }

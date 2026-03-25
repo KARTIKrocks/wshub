@@ -1,7 +1,11 @@
 import CodeBlock from '../components/CodeBlock';
 import ModuleSection from '../components/ModuleSection';
+import { useVersion } from '../hooks/useVersion';
 
 export default function RoomsDocs() {
+  const { minVersion } = useVersion();
+  const v110 = minVersion('v1.1.0');
+
   return (
     <ModuleSection
       id="rooms"
@@ -54,8 +58,11 @@ hub.LeaveAllRooms(client)`} />
             </tr>
           </thead>
           <tbody>
-            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">BroadcastToRoom(room, data)</td><td className="py-2 text-text-muted">Send to all clients in a room</td></tr>
-            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">BroadcastToRoomExcept(room, data, except...)</td><td className="py-2 text-text-muted">Send to room except specific clients</td></tr>
+            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">BroadcastToRoom(room, data)</td><td className="py-2 text-text-muted">Send{v110 ? ' text' : ''} to all clients in a room</td></tr>
+            {v110 && <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">BroadcastBinaryToRoom(room, data)</td><td className="py-2 text-text-muted">Send binary to all clients in a room</td></tr>}
+            {v110 && <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">BroadcastToRoomWithContext(ctx, room, data)</td><td className="py-2 text-text-muted">Send to room with context (blocks until enqueued)</td></tr>}
+            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">BroadcastToRoomExcept(room, data, except...)</td><td className="py-2 text-text-muted">Send{v110 ? ' text' : ''} to room except specific clients</td></tr>
+            {v110 && <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">BroadcastBinaryToRoomExcept(room, data, except...)</td><td className="py-2 text-text-muted">Send binary to room except specific clients</td></tr>}
           </tbody>
         </table>
       </div>
@@ -77,7 +84,8 @@ hub.BroadcastToRoomExcept("chat-general", []byte(msg), sender)`} />
           </thead>
           <tbody>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">hub.RoomClients(room)</td><td className="py-2 text-text-muted">Get all clients in a room</td></tr>
-            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">hub.RoomCount(room)</td><td className="py-2 text-text-muted">Count clients in a room</td></tr>
+            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">hub.RoomCount(room)</td><td className="py-2 text-text-muted">Count clients in a room{v110 ? ' (local node)' : ''}</td></tr>
+            {v110 && <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">hub.GlobalRoomCount(room)</td><td className="py-2 text-text-muted">Count clients in a room across all nodes (requires presence)</td></tr>}
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">hub.RoomNames()</td><td className="py-2 text-text-muted">Get all room names</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">hub.RoomExists(room)</td><td className="py-2 text-text-muted">Check if a room exists</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">client.Rooms()</td><td className="py-2 text-text-muted">List client's rooms</td></tr>

@@ -1,7 +1,11 @@
 import CodeBlock from '../components/CodeBlock';
 import ModuleSection from '../components/ModuleSection';
+import { useVersion } from '../hooks/useVersion';
 
 export default function ClientDocs() {
+  const { minVersion } = useVersion();
+  const v110 = minVersion('v1.1.0');
+
   return (
     <ModuleSection
       id="client"
@@ -65,12 +69,34 @@ token := req.Header.Get("Authorization")`} />
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">SendText(text)</td><td className="py-2 text-text-muted">Send a text string</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">SendJSON(v)</td><td className="py-2 text-text-muted">JSON-encode and send</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">SendBinary(data)</td><td className="py-2 text-text-muted">Send binary message</td></tr>
-            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">SendMessage(msgType, data)</td><td className="py-2 text-text-muted">Send with specific message type</td></tr>
-            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">SendWithContext(ctx, data)</td><td className="py-2 text-text-muted">Send with context support</td></tr>
+            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">SendMessage(msgType, data)</td><td className="py-2 text-text-muted">Send with specific message type{v110 ? ' (applies drop policy)' : ''}</td></tr>
+            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">SendWithContext(ctx, data)</td><td className="py-2 text-text-muted">Send text with context support{v110 ? ' (blocks until enqueued)' : ''}</td></tr>
+            {v110 && <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">SendMessageWithContext(ctx, msgType, data)</td><td className="py-2 text-text-muted">Send with type and context (blocks until enqueued)</td></tr>}
           </tbody>
         </table>
       </div>
-      <CodeBlock code={`// Send different message types
+      {v110 ? (
+        <CodeBlock code={`// Send different message types
+client.Send([]byte("raw bytes"))
+client.SendText("hello")
+client.SendBinary(binaryData)
+
+// Send JSON
+client.SendJSON(map[string]any{
+    "type": "chat",
+    "text": "hello world",
+    "time": time.Now(),
+})
+
+// Send with context (blocks until enqueued, unlike SendMessage which applies drop policy)
+ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+defer cancel()
+client.SendWithContext(ctx, []byte("important message"))
+
+// Send with specific type and context
+client.SendMessageWithContext(ctx, wshub.BinaryMessage, binaryData)`} />
+      ) : (
+        <CodeBlock code={`// Send different message types
 client.Send([]byte("raw bytes"))
 client.SendText("hello")
 client.SendBinary(binaryData)
@@ -86,6 +112,7 @@ client.SendJSON(map[string]any{
 ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 defer cancel()
 client.SendWithContext(ctx, []byte("important message"))`} />
+      )}
 
       {/* ── Metadata ── */}
       <h3 id="client-metadata" className="text-lg font-semibold text-text-heading mt-8 mb-2">Metadata</h3>

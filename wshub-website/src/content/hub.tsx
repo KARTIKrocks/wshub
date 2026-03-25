@@ -1,7 +1,11 @@
 import CodeBlock from '../components/CodeBlock';
 import ModuleSection from '../components/ModuleSection';
+import { useVersion } from '../hooks/useVersion';
 
 export default function HubDocs() {
+  const { minVersion } = useVersion();
+  const v110 = minVersion('v1.1.0');
+
   return (
     <ModuleSection
       id="hub"
@@ -14,6 +18,10 @@ export default function HubDocs() {
         'O(1) client and user lookups via hash maps',
         'Snapshot-based lock-free broadcasting',
         'Optional parallel broadcasting for 1000+ clients',
+        ...(v110 ? [
+          'Multi-node support via pluggable adapters',
+          'Configurable backpressure with drop policies',
+        ] : []),
         'Graceful shutdown with context support',
       ]}
     >
@@ -22,7 +30,30 @@ export default function HubDocs() {
       <p className="text-text-muted mb-3">
         Create a hub with functional options and start the run loop:
       </p>
-      <CodeBlock code={`hub := wshub.NewHub(
+      {v110 ? (
+        <CodeBlock code={`hub := wshub.NewHub(
+    wshub.WithConfig(config),
+    wshub.WithLogger(logger),
+    wshub.WithMetrics(metrics),
+    wshub.WithLimits(limits),
+    wshub.WithHooks(hooks),
+    wshub.WithMessageHandler(handler),
+    wshub.WithParallelBroadcast(100), // batch size for parallel broadcast
+    wshub.WithAdapter(adapter),       // multi-node support
+    wshub.WithPresence(5*time.Second),// cluster-wide counts
+    wshub.WithDropPolicy(wshub.DropOldest), // backpressure control
+)
+
+// Start the hub run loop (required)
+go hub.Run()
+
+// Register as HTTP handler
+http.HandleFunc("/ws", hub.HandleHTTP())
+
+// UpgradeConnection with options (e.g., set user ID atomically)
+client, err := hub.UpgradeConnection(w, r, wshub.WithUserID("user-123"))`} />
+      ) : (
+        <CodeBlock code={`hub := wshub.NewHub(
     wshub.WithConfig(config),
     wshub.WithLogger(logger),
     wshub.WithMetrics(metrics),
@@ -37,6 +68,7 @@ go hub.Run()
 
 // Register as HTTP handler
 http.HandleFunc("/ws", hub.HandleHTTP())`} />
+      )}
 
       {/* ── Hub Options ── */}
       <h3 id="hub-options" className="text-lg font-semibold text-text-heading mt-8 mb-2">Hub Options</h3>
@@ -56,6 +88,14 @@ http.HandleFunc("/ws", hub.HandleHTTP())`} />
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithHooks(h)</td><td className="py-2 text-text-muted">Set lifecycle hooks</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithMessageHandler(fn)</td><td className="py-2 text-text-muted">Set the message handler function</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithParallelBroadcast(n)</td><td className="py-2 text-text-muted">Enable parallel broadcasting with batch size n</td></tr>
+            {v110 && <>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithAdapter(adapter)</td><td className="py-2 text-text-muted">Set multi-node adapter for cross-node message delivery</td></tr>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithNodeID(id)</td><td className="py-2 text-text-muted">Set a stable node identifier for debugging (default: random UUID)</td></tr>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithPresence(interval)</td><td className="py-2 text-text-muted">Enable periodic presence gossip for global counts</td></tr>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithHookTimeout(d)</td><td className="py-2 text-text-muted">Max wait for synchronous hooks like BeforeDisconnect (default: 5s)</td></tr>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithDropPolicy(policy)</td><td className="py-2 text-text-muted">Set backpressure behavior when send buffer is full (DropNewest or DropOldest)</td></tr>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithoutHandlerLatency()</td><td className="py-2 text-text-muted">Disable built-in latency recording (use with MetricsMiddleware to avoid double-counting)</td></tr>
+            </>}
           </tbody>
         </table>
       </div>
@@ -71,14 +111,23 @@ http.HandleFunc("/ws", hub.HandleHTTP())`} />
             </tr>
           </thead>
           <tbody>
-            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">Broadcast(data)</td><td className="py-2 text-text-muted">Send bytes to all connected clients</td></tr>
+            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">Broadcast(data)</td><td className="py-2 text-text-muted">Send text bytes to all connected clients</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">BroadcastText(text)</td><td className="py-2 text-text-muted">Send a text string to all clients</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">BroadcastBinary(data)</td><td className="py-2 text-text-muted">Send binary data to all clients</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">BroadcastJSON(v)</td><td className="py-2 text-text-muted">JSON-encode and send to all clients</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">BroadcastWithContext(ctx, data)</td><td className="py-2 text-text-muted">Broadcast with context support</td></tr>
-            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">BroadcastExcept(data, except...)</td><td className="py-2 text-text-muted">Send to all except specified clients</td></tr>
-            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">SendToClient(clientID, data)</td><td className="py-2 text-text-muted">Send to a specific client by ID</td></tr>
-            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">SendToUser(userID, data)</td><td className="py-2 text-text-muted">Send to all connections of a user</td></tr>
+            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">BroadcastExcept(data, except...)</td><td className="py-2 text-text-muted">Send text to all except specified clients</td></tr>
+            {v110 && <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">BroadcastBinaryExcept(data, except...)</td><td className="py-2 text-text-muted">Send binary to all except specified clients</td></tr>}
+            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">SendToClient(clientID, data)</td><td className="py-2 text-text-muted">Send text to a specific client by ID</td></tr>
+            {v110 && <>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">SendBinaryToClient(clientID, data)</td><td className="py-2 text-text-muted">Send binary to a specific client by ID</td></tr>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">SendToClientWithContext(ctx, clientID, data)</td><td className="py-2 text-text-muted">Send to client with context (blocks until enqueued)</td></tr>
+            </>}
+            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">SendToUser(userID, data)</td><td className="py-2 text-text-muted">Send text to all connections of a user</td></tr>
+            {v110 && <>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">SendBinaryToUser(userID, data)</td><td className="py-2 text-text-muted">Send binary to all connections of a user</td></tr>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">SendToUserWithContext(ctx, userID, data)</td><td className="py-2 text-text-muted">Send to user with context (blocks until enqueued)</td></tr>
+            </>}
           </tbody>
         </table>
       </div>
@@ -106,10 +155,11 @@ hub.BroadcastExcept([]byte("hello others"), excludedClient1, excludedClient2)`} 
           </thead>
           <tbody>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">Clients()</td><td className="py-2 text-text-muted">Get all connected clients</td></tr>
-            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">ClientCount()</td><td className="py-2 text-text-muted">Get count of connected clients</td></tr>
+            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">ClientCount()</td><td className="py-2 text-text-muted">Get count of connected clients{v110 ? ' (atomic, no lock)' : ''}</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">GetClient(id)</td><td className="py-2 text-text-muted">O(1) client lookup by ID</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">GetClientByUserID(userID)</td><td className="py-2 text-text-muted">Get first client for a user</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">GetClientsByUserID(userID)</td><td className="py-2 text-text-muted">Get all connections for a user</td></tr>
+            {v110 && <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">NodeID()</td><td className="py-2 text-text-muted">Get this hub's unique node identifier</td></tr>}
           </tbody>
         </table>
       </div>
@@ -128,6 +178,53 @@ for _, c := range clients {
 // Count and list
 count := hub.ClientCount()
 allClients := hub.Clients()`} />
+
+      {/* ── Upgrade Options (v1.1.0+) ── */}
+      {v110 && <>
+        <h3 id="hub-upgrade" className="text-lg font-semibold text-text-heading mt-8 mb-2">Upgrade Options</h3>
+        <p className="text-text-muted mb-3">
+          Pass per-connection options to <code className="text-accent">UpgradeConnection</code> to configure the client before registration:
+        </p>
+        <CodeBlock code={`// Set user ID atomically during upgrade — before registration
+// This prevents the window where a client exists without a user ID,
+// which could bypass MaxConnectionsPerUser limits
+client, err := hub.UpgradeConnection(w, r, wshub.WithUserID(userID))
+if err != nil {
+    log.Printf("Upgrade failed: %v", err)
+    return
+}`} />
+      </>}
+
+      {/* ── Drop Policy (v1.1.0+) ── */}
+      {v110 && <>
+        <h3 id="hub-drop-policy" className="text-lg font-semibold text-text-heading mt-8 mb-2">Drop Policy</h3>
+        <p className="text-text-muted mb-3">
+          Control what happens when a client's send buffer is full:
+        </p>
+        <div className="overflow-x-auto mb-4">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-left">
+                <th className="py-2 pr-4 text-text-heading font-semibold">Policy</th>
+                <th className="py-2 text-text-heading font-semibold">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">DropNewest</td><td className="py-2 text-text-muted">Discard the new message when buffer is full (default)</td></tr>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">DropOldest</td><td className="py-2 text-text-muted">Evict the oldest queued message to make room for the new one</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <CodeBlock code={`// Keep the most recent data (good for real-time state updates)
+hub := wshub.NewHub(
+    wshub.WithDropPolicy(wshub.DropOldest),
+    wshub.WithHooks(wshub.Hooks{
+        OnSendDropped: func(client *wshub.Client, data []byte) {
+            log.Printf("Dropped message for slow client %s", client.ID)
+        },
+    }),
+)`} />
+      </>}
 
       {/* ── Graceful Shutdown ── */}
       <h3 id="hub-shutdown" className="text-lg font-semibold text-text-heading mt-8 mb-2">Graceful Shutdown</h3>

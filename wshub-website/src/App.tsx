@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import ThemeProvider from './components/ThemeProvider';
 import VersionProvider from './components/VersionProvider';
+import { useVersion } from './hooks/useVersion';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import VersionBanner from './components/VersionBanner';
@@ -12,11 +13,38 @@ import MessagesDocs from './content/messages';
 import RoomsDocs from './content/rooms';
 import MiddlewareDocs from './content/middleware';
 import RouterDocs from './content/router';
+import AdapterDocs from './content/adapter';
+import PresenceDocs from './content/presence';
 import HooksDocs from './content/hooks';
 import ConfigDocs from './content/config';
 import LimitsDocs from './content/limits';
 import MetricsDocs from './content/metrics';
 import ErrorsDocs from './content/errors';
+
+function DocsContent() {
+  const { minVersion } = useVersion();
+  const v110 = minVersion('v1.1.0');
+
+  return (
+    <>
+      <Hero />
+      <GettingStarted />
+      <HubDocs />
+      <ClientDocs />
+      <MessagesDocs />
+      <RoomsDocs />
+      <MiddlewareDocs />
+      <RouterDocs />
+      {v110 && <AdapterDocs />}
+      {v110 && <PresenceDocs />}
+      <HooksDocs />
+      <ConfigDocs />
+      <LimitsDocs />
+      <MetricsDocs />
+      <ErrorsDocs />
+    </>
+  );
+}
 
 export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -33,19 +61,7 @@ export default function App() {
             <div className="pt-4">
               <VersionBanner />
             </div>
-            <Hero />
-            <GettingStarted />
-            <HubDocs />
-            <ClientDocs />
-            <MessagesDocs />
-            <RoomsDocs />
-            <MiddlewareDocs />
-            <RouterDocs />
-            <HooksDocs />
-            <ConfigDocs />
-            <LimitsDocs />
-            <MetricsDocs />
-            <ErrorsDocs />
+            <DocsContent />
 
             <footer className="py-10 text-center text-sm text-text-muted border-t border-border mt-10">
               <p>
