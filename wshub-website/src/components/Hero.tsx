@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useVersion } from '../context/VersionContext';
+import { useVersion } from '../hooks/useVersion';
 
 const features = [
   { title: 'Production Ready', desc: 'Proper concurrency, graceful shutdown, error handling' },

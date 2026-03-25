@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { ThemeProvider } from './context/ThemeContext';
-import { VersionProvider } from './context/VersionContext';
+import ThemeProvider from './components/ThemeProvider';
+import VersionProvider from './components/VersionProvider';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import VersionBanner from './components/VersionBanner';

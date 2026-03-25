@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getHighlighter } from '../lib/highlighter';
-import { useTheme } from '../context/ThemeContext';
+import { useTheme } from '../hooks/useTheme';
 
 interface CodeBlockProps {
   code: string;
@@ -37,7 +37,7 @@ export default function CodeBlock({ code, lang = 'go' }: CodeBlockProps) {
       </button>
       {html ? (
         <div
-          className="rounded-lg overflow-x-auto text-sm border border-border [&>pre]:!p-4 [&>pre]:!m-0 [&>pre]:!rounded-lg [&>pre]:!bg-bg-card"
+          className="rounded-lg overflow-x-auto text-sm border border-border [&>pre]:p-4! [&>pre]:m-0! [&>pre]:rounded-lg! [&>pre]:bg-bg-card!"
           dangerouslySetInnerHTML={{ __html: html }}
         />
       ) : (

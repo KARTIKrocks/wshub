@@ -1,4 +1,4 @@
-import { useVersion } from '../context/VersionContext';
+import { useVersion } from '../hooks/useVersion';
 
 export default function VersionBanner() {
   const { isLatest, selectedVersion, latestVersion, setSelectedVersion } = useVersion();

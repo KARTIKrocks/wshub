@@ -1,5 +1,5 @@
 import CodeBlock from '../components/CodeBlock';
-import { useVersion } from '../context/VersionContext';
+import { useVersion } from '../hooks/useVersion';
 
 export default function GettingStarted() {
   const { selectedVersion, getInstallCmd } = useVersion();

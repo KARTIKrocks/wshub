@@ -1,6 +1,6 @@
 import VersionSelector from './VersionSelector';
 import ThemeToggle from './ThemeToggle';
-import { useVersion } from '../context/VersionContext';
+import { useVersion } from '../hooks/useVersion';
 
 interface NavbarProps {
   onMenuToggle: () => void;

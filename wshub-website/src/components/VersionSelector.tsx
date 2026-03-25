@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useVersion } from '../context/VersionContext';
+import { useVersion } from '../hooks/useVersion';
 
 export default function VersionSelector() {
   const { releases, selectedVersion, latestVersion, setSelectedVersion, loading, getReleaseUrl } = useVersion();

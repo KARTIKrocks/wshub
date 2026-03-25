@@ -1,24 +1,5 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-
-export interface Release {
-  tag_name: string;
-  html_url: string;
-  published_at: string;
-  prerelease: boolean;
-}
-
-interface VersionContextValue {
-  releases: Release[];
-  selectedVersion: string;
-  latestVersion: string;
-  setSelectedVersion: (v: string) => void;
-  loading: boolean;
-  isLatest: boolean;
-  getReleaseUrl: (version: string) => string;
-  getInstallCmd: (version: string) => string;
-}
-
-const VersionContext = createContext<VersionContextValue | null>(null);
+import { useState, useEffect, useCallback, type ReactNode } from 'react';
+import { VersionContext, type Release } from '../context/VersionContext';
 
 function getUrlVersion(): string | null {
   const params = new URLSearchParams(window.location.search);
@@ -35,7 +16,7 @@ function updateUrlVersion(version: string, latestVersion: string) {
   history.replaceState(null, '', url.toString());
 }
 
-export function VersionProvider({ children }: { children: ReactNode }) {
+export default function VersionProvider({ children }: { children: ReactNode }) {
   const [releases, setReleases] = useState<Release[]>([]);
   const [selectedVersion, setSelectedVersionState] = useState(() => getUrlVersion() ?? 'v1.0.1');
   const [loading, setLoading] = useState(true);
@@ -58,10 +39,8 @@ export function VersionProvider({ children }: { children: ReactNode }) {
 
             const urlVersion = getUrlVersion();
             if (urlVersion && stable.some((r) => r.tag_name === urlVersion)) {
-              // URL has a valid version — keep it
               setSelectedVersionState(urlVersion);
             } else {
-              // No version in URL or invalid — use latest
               setSelectedVersionState(latest);
             }
           }
@@ -118,10 +97,4 @@ export function VersionProvider({ children }: { children: ReactNode }) {
       {children}
     </VersionContext.Provider>
   );
-}
-
-export function useVersion() {
-  const ctx = useContext(VersionContext);
-  if (!ctx) throw new Error('useVersion must be used within VersionProvider');
-  return ctx;
 }
