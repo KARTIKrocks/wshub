@@ -1,9 +1,22 @@
+import VersionSelector from './VersionSelector';
+import { useVersion } from '../context/VersionContext';
+
 interface NavbarProps {
   onMenuToggle: () => void;
   menuOpen: boolean;
 }
 
 export default function Navbar({ onMenuToggle, menuOpen }: NavbarProps) {
+  const { selectedVersion, isLatest } = useVersion();
+
+  const goDocsUrl = isLatest
+    ? 'https://pkg.go.dev/github.com/KARTIKrocks/wshub'
+    : `https://pkg.go.dev/github.com/KARTIKrocks/wshub@${selectedVersion}`;
+
+  const githubUrl = isLatest
+    ? 'https://github.com/KARTIKrocks/wshub'
+    : `https://github.com/KARTIKrocks/wshub/tree/${selectedVersion}`;
+
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 h-16 bg-bg-nav/95 backdrop-blur border-b border-border flex items-center px-4 md:px-6">
       <button
@@ -22,15 +35,15 @@ export default function Navbar({ onMenuToggle, menuOpen }: NavbarProps) {
         )}
       </button>
 
-      <a href="#top" className="flex items-center gap-2">
+      <a href="#top" className="flex items-center gap-2 mr-2">
         <span className="text-xl font-bold text-text-heading">wshub</span>
-        <span className="text-xs font-medium bg-primary/20 text-primary px-2 py-0.5 rounded-full">v1.0.0</span>
       </a>
+      <VersionSelector />
 
       <div className="flex-1" />
 
       <a
-        href="https://pkg.go.dev/github.com/KARTIKrocks/wshub"
+        href={goDocsUrl}
         target="_blank"
         rel="noopener noreferrer"
         className="text-text-muted hover:text-text transition-colors mr-4 text-sm hidden sm:block"
@@ -39,7 +52,7 @@ export default function Navbar({ onMenuToggle, menuOpen }: NavbarProps) {
       </a>
 
       <a
-        href="https://github.com/KARTIKrocks/wshub"
+        href={githubUrl}
         target="_blank"
         rel="noopener noreferrer"
         className="text-text-muted hover:text-text transition-colors"

@@ -1,13 +1,16 @@
 import CodeBlock from '../components/CodeBlock';
+import { useVersion } from '../context/VersionContext';
 
 export default function GettingStarted() {
+  const { selectedVersion, getInstallCmd } = useVersion();
+
   return (
     <section id="getting-started" className="py-10 border-b border-border">
       <h2 className="text-2xl font-bold text-text-heading mb-4">Getting Started</h2>
 
       <h3 className="text-lg font-semibold text-text-heading mt-6 mb-2">Installation</h3>
-      <p className="text-text-muted mb-3">Requires <strong>Go 1.21+</strong>.</p>
-      <CodeBlock lang="bash" code={`go get github.com/KARTIKrocks/wshub`} />
+      <p className="text-text-muted mb-3">Requires <strong>Go 1.22+</strong>.</p>
+      <CodeBlock lang="bash" code={getInstallCmd(selectedVersion)} />
 
       <h3 className="text-lg font-semibold text-text-heading mt-8 mb-2">Quick Start</h3>
       <p className="text-text-muted mb-3">

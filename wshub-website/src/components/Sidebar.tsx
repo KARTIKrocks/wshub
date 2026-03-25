@@ -137,9 +137,14 @@ for (const s of sections) {
 }
 
 function updateHash(id: string) {
-  const hash = id === 'top' ? '' : `#${id}`;
-  if (window.location.hash !== hash) {
-    history.replaceState(null, '', hash || window.location.pathname);
+  const url = new URL(window.location.href);
+  if (id === 'top') {
+    url.hash = '';
+  } else {
+    url.hash = id;
+  }
+  if (window.location.hash !== url.hash) {
+    history.replaceState(null, '', url.toString());
   }
 }
 

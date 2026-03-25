@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useVersion } from '../context/VersionContext';
 
 const features = [
   { title: 'Production Ready', desc: 'Proper concurrency, graceful shutdown, error handling' },
@@ -11,7 +12,8 @@ const features = [
 
 export default function Hero() {
   const [copied, setCopied] = useState(false);
-  const installCmd = 'go get github.com/KARTIKrocks/wshub';
+  const { selectedVersion, getInstallCmd } = useVersion();
+  const installCmd = getInstallCmd(selectedVersion);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(installCmd);
