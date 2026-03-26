@@ -51,6 +51,17 @@ func WithParallelBroadcast(batchSize int) Option {
 	}
 }
 
+// WithParallelBroadcastWorkers sets the number of persistent worker goroutines
+// used for parallel broadcasting. The default is runtime.NumCPU().
+// This option has no effect unless WithParallelBroadcast is also set.
+func WithParallelBroadcastWorkers(n int) Option {
+	return func(h *Hub) {
+		if n > 0 {
+			h.poolSize = n
+		}
+	}
+}
+
 // WithMessageHandler sets the hub-level message handler.
 func WithMessageHandler(fn func(*Client, *Message) error) Option {
 	return func(h *Hub) {
