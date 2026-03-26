@@ -66,6 +66,7 @@ func setupHubWithRoom(n int, roomName string) (*Hub, []*Client) {
 		room.clients[c] = struct{}{}
 		c.rooms[roomName] = struct{}{}
 	}
+	rebuildRoomSnapshot(room)
 	hub.rooms[roomName] = room
 	hub.roomsMu.Unlock()
 	return hub, clients
@@ -129,7 +130,7 @@ func BenchmarkMessage_JSON(b *testing.B) {
 // ---------- Broadcast benchmarks ----------
 
 func BenchmarkBroadcast(b *testing.B) {
-	sizes := []int{10, 100, 1000, 5000, 10000, 50000, 100000, 1000000}
+	sizes := []int{100, 10000, 50000, 100000, 1000000}
 	data := []byte("broadcast message payload")
 
 	for _, n := range sizes {
@@ -147,7 +148,7 @@ func BenchmarkBroadcast(b *testing.B) {
 }
 
 func BenchmarkBroadcastExcept(b *testing.B) {
-	sizes := []int{5000, 100000, 1000000}
+	sizes := []int{100000, 1000000}
 	data := []byte("broadcast except payload")
 
 	for _, n := range sizes {
@@ -166,7 +167,7 @@ func BenchmarkBroadcastExcept(b *testing.B) {
 }
 
 func BenchmarkBroadcastParallel(b *testing.B) {
-	sizes := []int{100, 1000, 5000, 10000, 50000}
+	sizes := []int{100, 10000, 50000}
 	data := []byte("broadcast message payload")
 
 	for _, n := range sizes {
@@ -211,7 +212,7 @@ func BenchmarkBroadcastJSON(b *testing.B) {
 // ---------- Room broadcast benchmarks ----------
 
 func BenchmarkBroadcastToRoom(b *testing.B) {
-	sizes := []int{5000, 100000, 1000000}
+	sizes := []int{100000, 1000000}
 	data := []byte("room message payload")
 
 	for _, n := range sizes {
@@ -229,7 +230,7 @@ func BenchmarkBroadcastToRoom(b *testing.B) {
 }
 
 func BenchmarkBroadcastToRoomExcept(b *testing.B) {
-	sizes := []int{5000, 100000, 1000000}
+	sizes := []int{100000, 1000000}
 	data := []byte("room except payload")
 
 	for _, n := range sizes {
@@ -556,7 +557,7 @@ func setupHubWithUsers(n int) (*Hub, []*Client) {
 }
 
 func BenchmarkSendToUser(b *testing.B) {
-	sizes := []int{1000, 10000, 100000, 1000000}
+	sizes := []int{10000, 100000, 1000000}
 	data := []byte("hello user")
 
 	for _, n := range sizes {
@@ -586,7 +587,7 @@ func BenchmarkSendToUser(b *testing.B) {
 }
 
 func BenchmarkSendToClient(b *testing.B) {
-	sizes := []int{1000, 10000, 100000, 1000000}
+	sizes := []int{10000, 100000, 1000000}
 	data := []byte("hello client")
 
 	for _, n := range sizes {

@@ -1883,3 +1883,241 @@ func TestBroadcastToRoomWithContext_CancelledContext(t *testing.T) {
 		t.Errorf("got %v, want context.Canceled", err)
 	}
 }
+
+// ---------- Room snapshot tests ----------
+
+func TestRoomSnapshotUpdatedOnJoin(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	dial()
+	dial()
+	time.Sleep(50 * time.Millisecond)
+
+	clients := hub.Clients()
+	if len(clients) < 2 {
+		t.Fatalf("expected 2 clients, got %d", len(clients))
+	}
+
+	hub.JoinRoom(clients[0], "snap-room")
+	if hub.RoomCount("snap-room") != 1 {
+		t.Fatalf("RoomCount = %d, want 1", hub.RoomCount("snap-room"))
+	}
+
+	hub.JoinRoom(clients[1], "snap-room")
+	if hub.RoomCount("snap-room") != 2 {
+		t.Fatalf("RoomCount = %d, want 2", hub.RoomCount("snap-room"))
+	}
+
+	// Snapshot should reflect both clients.
+	got := hub.RoomClients("snap-room")
+	if len(got) != 2 {
+		t.Errorf("RoomClients = %d, want 2", len(got))
+	}
+}
+
+func TestRoomSnapshotUpdatedOnLeave(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	dial()
+	dial()
+	time.Sleep(50 * time.Millisecond)
+
+	clients := hub.Clients()
+	hub.JoinRoom(clients[0], "snap-leave")
+	hub.JoinRoom(clients[1], "snap-leave")
+
+	hub.LeaveRoom(clients[0], "snap-leave")
+	if hub.RoomCount("snap-leave") != 1 {
+		t.Errorf("RoomCount = %d, want 1 after leave", hub.RoomCount("snap-leave"))
+	}
+
+	got := hub.RoomClients("snap-leave")
+	if len(got) != 1 {
+		t.Errorf("RoomClients = %d, want 1", len(got))
+	}
+	if got[0] != clients[1] {
+		t.Error("remaining client should be clients[1]")
+	}
+}
+
+func TestRoomSnapshotUpdatedOnDisconnect(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	conn1 := dial()
+	dial()
+	time.Sleep(50 * time.Millisecond)
+
+	clients := hub.Clients()
+	hub.JoinRoom(clients[0], "snap-dc")
+	hub.JoinRoom(clients[1], "snap-dc")
+
+	// Disconnect client[0] by closing its WebSocket.
+	conn1.Close()
+	time.Sleep(100 * time.Millisecond)
+
+	if hub.RoomCount("snap-dc") != 1 {
+		t.Errorf("RoomCount = %d, want 1 after disconnect", hub.RoomCount("snap-dc"))
+	}
+}
+
+func TestRoomSnapshotIsolation(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+	hub.JoinRoom(client, "snap-iso")
+
+	// Get a copy from RoomClients — mutating it must not affect the snapshot.
+	got := hub.RoomClients("snap-iso")
+	got[0] = nil
+
+	// Internal snapshot should be unaffected.
+	got2 := hub.RoomClients("snap-iso")
+	if got2[0] == nil {
+		t.Error("mutating RoomClients return value corrupted the snapshot")
+	}
+}
+
+func TestRoomSnapshotConcurrentBroadcast(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	for range 5 {
+		dial()
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	clients := hub.Clients()
+	for _, c := range clients {
+		hub.JoinRoom(c, "snap-conc")
+	}
+
+	// Concurrently broadcast + join/leave to exercise snapshot under contention.
+	var wg sync.WaitGroup
+	wg.Add(3)
+
+	go func() {
+		defer wg.Done()
+		for range 100 {
+			hub.BroadcastToRoom("snap-conc", []byte("concurrent"))
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		for range 100 {
+			hub.BroadcastToRoomExcept("snap-conc", []byte("except"), clients[0])
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		for i := range 50 {
+			if i%2 == 0 {
+				hub.LeaveRoom(clients[0], "snap-conc")
+			} else {
+				hub.JoinRoom(clients[0], "snap-conc")
+			}
+		}
+	}()
+
+	wg.Wait()
+
+	// Drain all client send channels to avoid blocking.
+	for _, c := range clients {
+		for {
+			select {
+			case <-c.send:
+			default:
+				goto drained
+			}
+		}
+	drained:
+	}
+}
+
+func TestLoadRoomSnapshotNil(t *testing.T) {
+	// A Room with no snapshot stored should return emptyRoomSnapshot.
+	room := &Room{clients: make(map[*Client]struct{})}
+	got := loadRoomSnapshot(room)
+	if got == nil {
+		t.Fatal("loadRoomSnapshot returned nil, want emptyRoomSnapshot")
+	}
+	if len(got) != 0 {
+		t.Errorf("loadRoomSnapshot len = %d, want 0", len(got))
+	}
+}
+
+func TestParallelBroadcastToRoomExcept(t *testing.T) {
+	hub := NewHub(WithParallelBroadcast(2))
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	var conns []*websocket.Conn
+	for range 5 {
+		conns = append(conns, dial())
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	clients := hub.Clients()
+	for _, c := range clients {
+		hub.JoinRoom(c, "par-except-room")
+	}
+
+	// Exclude first client — remaining 4 should receive.
+	hub.BroadcastToRoomExcept("par-except-room", []byte("par-except"), clients[0])
+
+	// We can't map client index to conn index, so just count receivers.
+	received := 0
+	for _, conn := range conns {
+		conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+		_, _, err := conn.ReadMessage()
+		if err == nil {
+			received++
+		}
+	}
+	if received != 4 {
+		t.Errorf("expected 4 connections to receive, got %d", received)
+	}
+}
