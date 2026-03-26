@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2026-03-26
+
+### Changed
+
+- **Worker pool for parallel broadcast** — `parallelSend` and `sendWithContext` now dispatch batches to a persistent pool of goroutines instead of spawning new goroutines per broadcast call; at 50K clients with batch size 100, allocations drop from 102/op to 2/op (goroutine churn eliminated)
+- Worker pool is lazily initialized via `sync.Once` and cleanly shut down during `Hub.Shutdown`
+- Pool shutdown is safe against double-close and post-shutdown broadcasts (graceful fallback to sequential send)
+
+### Added
+
+- `WithParallelBroadcastWorkers(n int)` option to configure the number of persistent worker goroutines (default: `runtime.NumCPU()`)
+
 ## [1.1.1] - 2026-03-26
 
 ### Changed

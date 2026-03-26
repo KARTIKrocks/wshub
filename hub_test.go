@@ -2121,3 +2121,76 @@ func TestParallelBroadcastToRoomExcept(t *testing.T) {
 		t.Errorf("expected 4 connections to receive, got %d", received)
 	}
 }
+
+// ---------- Worker pool safety tests ----------
+
+func TestWorkerPool_DoubleShutdown(t *testing.T) {
+	pool := newWorkerPool(2)
+	pool.shutdown()
+	pool.shutdown() // must not panic
+}
+
+func TestWorkerPool_SubmitAfterShutdown(t *testing.T) {
+	pool := newWorkerPool(2)
+	pool.shutdown()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	ok := pool.submit(broadcastTask{wg: &wg})
+	if ok {
+		t.Fatal("submit should return false after shutdown")
+	}
+	// wg was never Done'd by the pool, so manually undo the Add
+	wg.Done()
+}
+
+func TestParallelSend_AfterPoolShutdown(t *testing.T) {
+	hub, clients := setupHubWithClients(10)
+	hub.useParallel = true
+	hub.parallelBatchSize = 2
+	hub.updateClientsSnapshot()
+
+	// Force pool creation then shut it down.
+	hub.ensurePool()
+	hub.pool.shutdown()
+
+	// parallelSend must fall back to sequential — no panic, all clients receive.
+	hub.Broadcast([]byte("after-shutdown"))
+
+	for i, c := range clients {
+		select {
+		case item := <-c.send:
+			if string(item.data) != "after-shutdown" {
+				t.Errorf("client[%d] got %q, want %q", i, item.data, "after-shutdown")
+			}
+		default:
+			t.Errorf("client[%d] did not receive message", i)
+		}
+	}
+}
+
+func TestSendWithContext_AfterPoolShutdown(t *testing.T) {
+	hub, clients := setupHubWithClients(10)
+	hub.useParallel = true
+	hub.parallelBatchSize = 2
+	hub.updateClientsSnapshot()
+
+	hub.ensurePool()
+	hub.pool.shutdown()
+
+	err := hub.BroadcastWithContext(context.Background(), []byte("ctx-after-shutdown"))
+	if err != nil {
+		t.Fatalf("BroadcastWithContext returned error: %v", err)
+	}
+
+	for i, c := range clients {
+		select {
+		case item := <-c.send:
+			if string(item.data) != "ctx-after-shutdown" {
+				t.Errorf("client[%d] got %q, want %q", i, item.data, "ctx-after-shutdown")
+			}
+		default:
+			t.Errorf("client[%d] did not receive message", i)
+		}
+	}
+}

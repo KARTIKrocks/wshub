@@ -182,6 +182,10 @@ func BenchmarkBroadcastParallel(b *testing.B) {
 					drainClient(c)
 				}
 			}
+			b.StopTimer()
+			if hub.pool != nil {
+				hub.pool.shutdown()
+			}
 		})
 	}
 }

@@ -1,6 +1,7 @@
 package wshub
 
 import (
+	"runtime"
 	"testing"
 	"time"
 )
@@ -55,6 +56,20 @@ func TestWithParallelBroadcast_ZeroBatchSize(t *testing.T) {
 	// batchSize <= 0 should not override the default
 	if hub.parallelBatchSize == 0 {
 		t.Error("parallelBatchSize should keep default when 0 is passed")
+	}
+}
+
+func TestWithParallelBroadcastWorkers(t *testing.T) {
+	hub := NewHub(WithParallelBroadcast(100), WithParallelBroadcastWorkers(8))
+	if hub.poolSize != 8 {
+		t.Errorf("poolSize = %d, want 8", hub.poolSize)
+	}
+}
+
+func TestWithParallelBroadcastWorkers_Zero(t *testing.T) {
+	hub := NewHub(WithParallelBroadcastWorkers(0))
+	if hub.poolSize != runtime.NumCPU() {
+		t.Errorf("poolSize = %d, want default %d", hub.poolSize, runtime.NumCPU())
 	}
 }
 

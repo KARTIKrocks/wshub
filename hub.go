@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -114,6 +115,11 @@ type Hub struct {
 	parallelBatchSize int  // Number of clients per goroutine (default: 100)
 	useParallel       bool // Enable parallel broadcasting (default: false, enable for 1000+ clients)
 
+	// Worker pool for parallel broadcast (nil until initialized via ensurePool).
+	pool     *workerPool
+	poolOnce sync.Once
+	poolSize int // number of worker goroutines (default: runtime.NumCPU())
+
 	// Drop policy for full send buffers (default: DropNewest)
 	dropPolicy DropPolicy
 
@@ -158,6 +164,7 @@ func NewHub(opts ...Option) *Hub {
 		cancel:            cancel,
 		parallelBatchSize: 100,
 		useParallel:       false,
+		poolSize:          runtime.NumCPU(),
 		hookTimeout:       5 * time.Second,
 		nodeID:            uuid.New().String(),
 	}
@@ -356,11 +363,26 @@ func (h *Hub) NodeID() string {
 	return h.nodeID
 }
 
+// ensurePool lazily initializes the worker pool on first use.
+// This allows benchmarks that set useParallel directly (without calling Run)
+// to work correctly.
+func (h *Hub) ensurePool() *workerPool {
+	h.poolOnce.Do(func() {
+		h.pool = newWorkerPool(h.poolSize)
+	})
+	return h.pool
+}
+
 // Run starts the hub's main loop.
 func (h *Hub) Run() {
 	// wg.Add(1) is done in NewHub so Shutdown can safely call wg.Wait()
 	// even before Run starts.
 	defer h.wg.Done()
+
+	// Start worker pool for parallel broadcasts if enabled.
+	if h.useParallel {
+		h.ensurePool()
+	}
 
 	// Start adapter subscription if configured.
 	if h.adapter != nil {
@@ -653,6 +675,15 @@ func (h *Hub) Shutdown(ctx context.Context) error {
 		if err := h.adapter.Close(); err != nil {
 			h.logger.Error("adapter close failed", "error", err)
 		}
+	}
+
+	// Stop the worker pool if it was started. This drains remaining tasks
+	// before workers exit, ensuring in-flight broadcasts complete.
+	// Synchronize via poolOnce to ensure visibility of any pool created
+	// by a concurrent ensurePool call (e.g. Run still starting up).
+	h.poolOnce.Do(func() {})
+	if h.pool != nil {
+		h.pool.shutdown()
 	}
 
 	done := make(chan struct{})
@@ -1070,9 +1101,9 @@ func (h *Hub) GetClientsByUserID(userID string) []*Client {
 	return clients
 }
 
-// parallelSend sends a sendItem to a slice of clients in parallel batches.
-// If the number of clients is at or below the batch size, it sends sequentially
-// to avoid goroutine overhead.
+// parallelSend sends a sendItem to a slice of clients in parallel batches
+// using a persistent worker pool. If the number of clients is at or below
+// the batch size, it sends sequentially to avoid pool dispatch overhead.
 func (h *Hub) parallelSend(clients []*Client, item sendItem) {
 	if len(clients) == 0 {
 		return
@@ -1086,6 +1117,7 @@ func (h *Hub) parallelSend(clients []*Client, item sendItem) {
 		return
 	}
 
+	pool := h.ensurePool()
 	numBatches := (len(clients) + batchSize - 1) / batchSize
 
 	var wg sync.WaitGroup
@@ -1094,13 +1126,23 @@ func (h *Hub) parallelSend(clients []*Client, item sendItem) {
 	for i := range numBatches {
 		start := i * batchSize
 		end := min(start+batchSize, len(clients))
-
-		go func(batch []*Client) {
-			defer wg.Done()
-			for _, client := range batch {
+		task := broadcastTask{
+			hub:     h,
+			clients: clients[start:end],
+			item:    item,
+			wg:      &wg,
+		}
+		if !pool.submit(task) {
+			// Pool shut down — send remaining batches inline.
+			remaining := numBatches - i
+			for range remaining {
+				wg.Done()
+			}
+			for _, client := range clients[start:] {
 				h.trySend(client, item)
 			}
-		}(clients[start:end])
+			break
+		}
 	}
 
 	wg.Wait()
@@ -1170,8 +1212,8 @@ func (h *Hub) BroadcastWithContext(ctx context.Context, data []byte) error {
 }
 
 // sendWithContext sends to a list of clients with context cancellation support.
-// When parallel mode is enabled, batches run concurrently and all stop early
-// when the context is cancelled.
+// When parallel mode is enabled, batches are dispatched to the worker pool
+// and all stop early when the context is cancelled.
 func (h *Hub) sendWithContext(ctx context.Context, clients []*Client, item sendItem) error {
 	if len(clients) == 0 {
 		return nil
@@ -1186,36 +1228,47 @@ func (h *Hub) sendWithContext(ctx context.Context, clients []*Client, item sendI
 		return nil
 	}
 
+	pool := h.ensurePool()
 	batchSize := h.parallelBatchSize
 	numBatches := (len(clients) + batchSize - 1) / batchSize
 
-	// Use a derived context so any batch detecting cancellation stops all.
-	var ctxErr error
-	var mu sync.Mutex
 	var wg sync.WaitGroup
 	wg.Add(numBatches)
+	result := &contextResult{}
 
 	for i := range numBatches {
 		start := i * batchSize
 		end := min(start+batchSize, len(clients))
-
-		go func(batch []*Client) {
-			defer wg.Done()
-			for _, client := range batch {
+		task := broadcastTask{
+			hub:     h,
+			clients: clients[start:end],
+			item:    item,
+			ctx:     ctx,
+			result:  result,
+			wg:      &wg,
+		}
+		if !pool.submit(task) {
+			// Pool shut down — send remaining batches inline.
+			remaining := numBatches - i
+			for range remaining {
+				wg.Done()
+			}
+			for _, client := range clients[start:] {
 				if !h.trySendWithContext(ctx, client, item) {
-					mu.Lock()
-					if ctxErr == nil {
-						ctxErr = ctx.Err()
+					result.mu.Lock()
+					if result.err == nil {
+						result.err = ctx.Err()
 					}
-					mu.Unlock()
-					return
+					result.mu.Unlock()
+					break
 				}
 			}
-		}(clients[start:end])
+			break
+		}
 	}
 
 	wg.Wait()
-	return ctxErr
+	return result.err
 }
 
 // trySendWithContext sends to a client's channel with context cancellation.
