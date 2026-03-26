@@ -31,17 +31,18 @@ A production-ready, scalable WebSocket package for Go with support for rooms, br
 
 Zero-allocation broadcasting, nanosecond lookups — built for scale. ([Full benchmarks](#benchmarks))
 
-| Operation                | Scale             | Time     | Allocs |
-| ------------------------ | ----------------- | -------- | ------ |
-| `Broadcast`              | 100,000 clients   | 25.7 ms  | 0      |
-| `Broadcast`              | 1,000,000 clients | 399 ms   | 0      |
-| `SendToClient`           | 1,000,000 clients | 113 ns   | 0      |
-| `SendToUser`             | 1,000,000 users   | 174 ns   | 1      |
-| `GetClient`              | 1,000 clients     | 16.1 ns  | 0      |
-| `GlobalClientCount`      | 500 nodes         | 3.6 μs   | 0      |
-| Middleware chain (built)  | 3 middlewares     | 12.4 ns  | 0      |
+| Operation                | Scale             | Time    | Allocs |
+| ------------------------ | ----------------- | ------- | ------ |
+| `Broadcast`              | 100,000 clients   | 25.8 ms | 0      |
+| `Broadcast`              | 1,000,000 clients | 388 ms  | 0      |
+| `BroadcastToRoom`        | 1,000,000 clients | 248 ms  | 0      |
+| `SendToClient`           | 1,000,000 clients | 112 ns  | 0      |
+| `SendToUser`             | 1,000,000 users   | 173 ns  | 1      |
+| `GetClient`              | 1,000 clients     | 16.0 ns | 0      |
+| `GlobalClientCount`      | 500 nodes         | 3.8 μs  | 0      |
+| Middleware chain (built) | 3 middlewares     | 12.7 ns | 0      |
 
-> Message size has no impact on dispatch — 64 B and 64 KB both take 5.3 μs for 100 clients.
+> Message size has no impact on dispatch — 64 B and 64 KB both take 5.2 μs for 100 clients.
 
 ## Installation
 
@@ -640,7 +641,7 @@ Save as `index.html` and open in a browser while the server is running:
 
 ## Benchmarks
 
-Measured on an Intel i5-11400H @ 2.70GHz (12 cores), Go 1.24, Linux. See [performance highlights](#performance-highlights) for a quick summary.
+Measured on an Intel i5-11400H @ 2.70GHz (12 cores), Go 1.26, Linux. See [performance highlights](#performance-highlights) for a quick summary.
 
 Run them yourself:
 
@@ -652,77 +653,71 @@ go test -bench=. -benchmem ./...
 
 | Operation               | Clients   | Time    | Allocs |
 | ----------------------- | --------- | ------- | ------ |
-| `Broadcast`             | 5,000     | 558 μs  | 0      |
-| `Broadcast`             | 100,000   | 25.7 ms | 0      |
-| `Broadcast`             | 1,000,000 | 399 ms  | 0      |
-| `BroadcastToRoom`       | 5,000     | 373 μs  | 1      |
-| `BroadcastToRoom`       | 100,000   | 22.1 ms | 1      |
-| `BroadcastToRoom`       | 1,000,000 | 272 ms  | 1      |
-| `BroadcastExcept`       | 5,000     | 371 μs  | 1      |
-| `BroadcastExcept`       | 100,000   | 26.2 ms | 1      |
-| `BroadcastExcept`       | 1,000,000 | 417 ms  | 1      |
-| `BroadcastToRoomExcept` | 5,000     | 399 μs  | 2      |
-| `BroadcastToRoomExcept` | 100,000   | 23.9 ms | 2      |
-| `BroadcastToRoomExcept` | 1,000,000 | 392 ms  | 2      |
+| `Broadcast`             | 100,000   | 25.8 ms | 0      |
+| `Broadcast`             | 1,000,000 | 388 ms  | 0      |
+| `BroadcastToRoom`       | 100,000   | 21.3 ms | 0      |
+| `BroadcastToRoom`       | 1,000,000 | 248 ms  | 0      |
+| `BroadcastExcept`       | 100,000   | 27.7 ms | 1      |
+| `BroadcastExcept`       | 1,000,000 | 342 ms  | 1      |
+| `BroadcastToRoomExcept` | 100,000   | 24.5 ms | 1      |
+| `BroadcastToRoomExcept` | 1,000,000 | 281 ms  | 1      |
 
 ### Targeted Send (O(1) at any scale, zero allocations)
 
 | Operation      | Scale             | Time   | Allocs |
 | -------------- | ----------------- | ------ | ------ |
-| `SendToClient` | 1,000 clients     | 111 ns | 0      |
-| `SendToClient` | 100,000 clients   | 111 ns | 0      |
-| `SendToClient` | 1,000,000 clients | 113 ns | 0      |
-| `SendToUser`   | 1,000 users       | 170 ns | 1      |
+| `SendToClient` | 100,000 clients   | 115 ns | 0      |
+| `SendToClient` | 1,000,000 clients | 112 ns | 0      |
 | `SendToUser`   | 100,000 users     | 175 ns | 1      |
-| `SendToUser`   | 1,000,000 users   | 174 ns | 1      |
+| `SendToUser`   | 1,000,000 users   | 173 ns | 1      |
 
 ### Global Counts — Presence (zero allocations)
 
-| Operation          | Nodes | Time   | Allocs |
-| ------------------ | ----- | ------ | ------ |
-| `GlobalClientCount` | 5    | 55 ns  | 0      |
-| `GlobalClientCount` | 50   | 329 ns | 0      |
-| `GlobalClientCount` | 100  | 636 ns | 0      |
-| `GlobalClientCount` | 500  | 3.6 μs | 0      |
-| `GlobalRoomCount`   | 5    | 110 ns | 0      |
-| `GlobalRoomCount`   | 50   | 746 ns | 0      |
-| `GlobalRoomCount`   | 100  | 1.5 μs | 0      |
-| `GlobalRoomCount`   | 500  | 8.7 μs | 0      |
+| Operation           | Nodes | Time   | Allocs |
+| ------------------- | ----- | ------ | ------ |
+| `GlobalClientCount` | 5     | 59 ns  | 0      |
+| `GlobalClientCount` | 50    | 382 ns | 0      |
+| `GlobalClientCount` | 100   | 615 ns | 0      |
+| `GlobalClientCount` | 500   | 3.8 μs | 0      |
+| `GlobalRoomCount`   | 5     | 99 ns  | 0      |
+| `GlobalRoomCount`   | 50    | 737 ns | 0      |
+| `GlobalRoomCount`   | 100   | 1.4 μs | 0      |
+| `GlobalRoomCount`   | 500   | 8.4 μs | 0      |
 
 ### Message size has no impact on dispatch
 
 | Payload | Time (100 clients) | Allocs |
 | ------- | ------------------ | ------ |
-| 64 B    | 5.4 μs             | 0      |
+| 64 B    | 5.2 μs             | 0      |
 | 512 B   | 5.3 μs             | 0      |
-| 4 KB    | 5.3 μs             | 0      |
+| 4 KB    | 5.2 μs             | 0      |
 | 64 KB   | 5.5 μs             | 0      |
 
 ### Client & Room Lookups (zero allocations)
 
-| Operation                   | Time     | Allocs |
-| --------------------------- | -------- | ------ |
-| `GetClient` (1,000 clients) | 16.1 ns | 0      |
-| `ClientCount`               | 0.28 ns | 0      |
-| `GetClientByUserID`         | 49.6 ns | 0      |
-| `RoomExists`                | 16.2 ns | 0      |
-| `RoomCount`                 | 25.4 ns | 0      |
-| `GetMetadata`               | 17.0 ns | 0      |
-| `SetMetadata`               | 27.1 ns | 0      |
+| Operation                   | Time    | Allocs |
+| --------------------------- | ------- | ------ |
+| `GetClient` (1,000 clients) | 16.0 ns | 0      |
+| `ClientCount`               | 0.24 ns | 0      |
+| `GetClientByUserID`         | 48.1 ns | 0      |
+| `RoomExists`                | 16.8 ns | 0      |
+| `RoomCount`                 | 15.4 ns | 0      |
+| `GetMetadata`               | 16.0 ns | 0      |
+| `SetMetadata`               | 28.1 ns | 0      |
 
 ### Client Send
 
-| Operation     | Time   | Allocs |
-| ------------- | ------ | ------ |
-| `Send` (text) | 71.6 ns | 1      |
-| `SendJSON`    | 411 ns  | 5      |
+| Operation     | Time    | Allocs |
+| ------------- | ------- | ------ |
+| `Send` (text) | 74.0 ns | 1      |
+| `SendJSON`    | 420 ns  | 5      |
 
 ### Middleware Chain
 
 | Mode                 | Time    | Allocs |
 | -------------------- | ------- | ------ |
-| Built (cached)       | 12.4 ns | 0      |
-| Unbuilt (on-the-fly) | 15.1 ns | 0      |
+| Built (cached)       | 12.7 ns | 0      |
+| Unbuilt (on-the-fly) | 15.2 ns | 0      |
 
 > Always call `Build()` on your middleware chain for best performance.
 
@@ -730,19 +725,19 @@ go test -bench=. -benchmem ./...
 
 | Operation                 | Time    | Allocs |
 | ------------------------- | ------- | ------ |
-| `GetClient`               | 26.1 ns | 0      |
-| `ClientCount`             | 0.18 ns | 0      |
-| `Metadata` (set+get)      | 62.3 ns | 0      |
-| `Broadcast` (100 clients) | 5.0 μs  | 116    |
+| `GetClient`               | 24.6 ns | 0      |
+| `ClientCount`             | 0.19 ns | 0      |
+| `Metadata` (set+get)      | 69.3 ns | 0      |
+| `Broadcast` (100 clients) | 4.4 μs  | 119    |
 
 ### Message Creation
 
-| Operation          | Time   | Allocs |
-| ------------------ | ------ | ------ |
-| `NewMessage`       | 28.3 ns | 0      |
-| `NewTextMessage`   | 28.2 ns | 0      |
-| `NewBinaryMessage` | 27.9 ns | 0      |
-| `NewJSONMessage`   | 701 ns  | 9      |
+| Operation          | Time    | Allocs |
+| ------------------ | ------- | ------ |
+| `NewMessage`       | 27.9 ns | 0      |
+| `NewTextMessage`   | 27.9 ns | 0      |
+| `NewBinaryMessage` | 27.8 ns | 0      |
+| `NewJSONMessage`   | 610 ns  | 9      |
 
 ## Thread Safety
 

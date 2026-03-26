@@ -41,8 +41,9 @@ const (
 
 // Room represents a chat room with its own lock for better concurrency.
 type Room struct {
-	mu      sync.RWMutex
-	clients map[*Client]struct{}
+	mu       sync.RWMutex
+	clients  map[*Client]struct{}
+	snapshot atomic.Value // []*Client — lock-free snapshot for broadcasts
 }
 
 // Hub maintains the set of active clients and broadcasts messages.
@@ -219,6 +220,10 @@ func NewHub(opts ...Option) *Hub {
 // allocation on every call.
 var emptySnapshot = map[*Client]struct{}{}
 
+// emptyRoomSnapshot is returned by loadRoomSnapshot when the room's
+// atomic.Value has not been initialized yet.
+var emptyRoomSnapshot = []*Client{}
+
 // loadSnapshot returns the current lock-free client snapshot. It uses the
 // comma-ok type assertion to avoid panicking if the atomic.Value holds an
 // unexpected type.
@@ -241,6 +246,25 @@ func (h *Hub) updateClientsSnapshot() {
 		snapshot[client] = struct{}{}
 	}
 	h.clientsSnapshot.Store(snapshot)
+}
+
+// loadRoomSnapshot returns the current lock-free client slice for a room.
+func loadRoomSnapshot(room *Room) []*Client {
+	snapshot, _ := room.snapshot.Load().([]*Client)
+	if snapshot == nil {
+		return emptyRoomSnapshot
+	}
+	return snapshot
+}
+
+// rebuildRoomSnapshot creates a new snapshot slice from room.clients and
+// stores it atomically. Must be called while room.mu is held (read or write).
+func rebuildRoomSnapshot(room *Room) {
+	clients := make([]*Client, 0, len(room.clients))
+	for client := range room.clients {
+		clients = append(clients, client)
+	}
+	room.snapshot.Store(clients)
 }
 
 // addToUserIndex adds a client to the user index, checking
@@ -571,6 +595,7 @@ func (h *Hub) removeClientFromAllRoomsWithHooks(client *Client) {
 			continue
 		}
 		delete(room.clients, client)
+		rebuildRoomSnapshot(room)
 		roomEmpty := len(room.clients) == 0
 		room.mu.Unlock()
 
@@ -972,11 +997,8 @@ func (h *Hub) broadcastToRoomExceptByIDs(roomName string, item sendItem, exceptI
 		return
 	}
 
-	room.mu.RLock()
-	defer room.mu.RUnlock()
-
 	excludeSet := buildExcludeSet(exceptIDs)
-	for client := range room.clients {
+	for _, client := range loadRoomSnapshot(room) {
 		if !isExcludedByID(client.ID, exceptIDs, excludeSet) {
 			h.trySend(client, item)
 		}
@@ -1468,6 +1490,7 @@ func (h *Hub) JoinRoom(client *Client, roomName string) error {
 	client.mu.Unlock()
 
 	room.clients[client] = struct{}{}
+	rebuildRoomSnapshot(room)
 	roomSize := len(room.clients)
 	room.mu.Unlock()
 	h.roomVersion.Add(1)
@@ -1522,6 +1545,7 @@ func (h *Hub) LeaveRoom(client *Client, roomName string) error {
 		return ErrNotInRoom
 	}
 	delete(room.clients, client)
+	rebuildRoomSnapshot(room)
 	client.leaveRoom(roomName)
 	h.roomVersion.Add(1)
 	roomEmpty := len(room.clients) == 0
@@ -1554,12 +1578,7 @@ func (h *Hub) LeaveAllRooms(client *Client) {
 // It snapshots membership under the room lock, then releases before
 // sending to avoid holding the lock during potentially slow channel ops.
 func (h *Hub) broadcastToRoomClients(room *Room, item sendItem) {
-	room.mu.RLock()
-	clients := make([]*Client, 0, len(room.clients))
-	for client := range room.clients {
-		clients = append(clients, client)
-	}
-	room.mu.RUnlock()
+	clients := loadRoomSnapshot(room)
 
 	if h.useParallel {
 		h.parallelSend(clients, item)
@@ -1625,12 +1644,7 @@ func (h *Hub) BroadcastToRoomWithContext(ctx context.Context, roomName string, d
 	var ctxErr error
 	if ok {
 		item := sendItem{msgType: websocket.TextMessage, data: data}
-		room.mu.RLock()
-		clients := make([]*Client, 0, len(room.clients))
-		for client := range room.clients {
-			clients = append(clients, client)
-		}
-		room.mu.RUnlock()
+		clients := loadRoomSnapshot(room)
 		ctxErr = h.sendWithContext(ctx, clients, item)
 	}
 
@@ -1679,21 +1693,22 @@ func (h *Hub) broadcastToRoomExceptWithType(roomName string, data []byte, msgTyp
 			exclude[c] = struct{}{}
 		}
 
-		room.mu.RLock()
-		clients := make([]*Client, 0, len(room.clients))
-		for client := range room.clients {
-			if _, skip := exclude[client]; !skip {
-				clients = append(clients, client)
-			}
-		}
-		room.mu.RUnlock()
-
+		snapshot := loadRoomSnapshot(room)
 		item := sendItem{msgType: msgType, data: data}
 		if h.useParallel {
+			// Filter excluded clients before parallel send.
+			clients := make([]*Client, 0, len(snapshot))
+			for _, client := range snapshot {
+				if _, skip := exclude[client]; !skip {
+					clients = append(clients, client)
+				}
+			}
 			h.parallelSend(clients, item)
 		} else {
-			for _, client := range clients {
-				h.trySend(client, item)
+			for _, client := range snapshot {
+				if _, skip := exclude[client]; !skip {
+					h.trySend(client, item)
+				}
 			}
 		}
 	}
@@ -1737,13 +1752,10 @@ func (h *Hub) RoomClients(roomName string) []*Client {
 		return nil
 	}
 
-	room.mu.RLock()
-	defer room.mu.RUnlock()
-
-	clients := make([]*Client, 0, len(room.clients))
-	for client := range room.clients {
-		clients = append(clients, client)
-	}
+	snapshot := loadRoomSnapshot(room)
+	// Return a copy so callers cannot mutate the shared snapshot.
+	clients := make([]*Client, len(snapshot))
+	copy(clients, snapshot)
 	return clients
 }
 
@@ -1757,10 +1769,7 @@ func (h *Hub) RoomCount(roomName string) int {
 		return 0
 	}
 
-	room.mu.RLock()
-	defer room.mu.RUnlock()
-
-	return len(room.clients)
+	return len(loadRoomSnapshot(room))
 }
 
 // RoomNames returns all room names.

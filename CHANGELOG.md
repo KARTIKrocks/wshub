@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-03-26
+
+### Changed
+
+- **Lock-free room broadcast snapshots** — `Room` now stores an `atomic.Value` snapshot (`[]*Client`) rebuilt on join/leave, eliminating per-broadcast slice allocations in `BroadcastToRoom`, `BroadcastToRoomExcept`, `BroadcastToRoomWithContext`, and `RoomClients`; at 1M clients, room broadcast allocations drop from 8 MB/op to 0 B/op
+- `RoomCount` now reads the atomic snapshot length instead of acquiring `room.mu`
+- `broadcastToRoomExceptByIDs` (adapter receive path) uses the lock-free snapshot instead of iterating under `room.mu.RLock`
+- Presence publisher (`presence.go`) uses lock-free snapshot for room counts instead of acquiring per-room `RLock`
+
+### Added
+
+- `loadRoomSnapshot` and `rebuildRoomSnapshot` helpers for room-level atomic snapshots
+- Tests for room snapshot correctness: join, leave, disconnect, caller isolation, and concurrent broadcast-with-mutation
+
 ## [1.1.0] - 2026-03-25
 
 ### Added
@@ -143,6 +157,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Examples: simple echo server, chat with rooms, JWT auth, metrics endpoint
 - Documentation: README, QUICKSTART, SCALABILITY, CONTRIBUTING
 
+[1.1.1]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.1.1
 [1.1.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.1.0
 [1.0.1]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.0.1
 [1.0.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.0.0

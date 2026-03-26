@@ -67,13 +67,11 @@ func (h *Hub) publishPresence(s *presenceState) {
 		s.lastClientCount = clientCount
 		s.lastRoomVersion = roomVersion
 
-		// Gather local room counts.
+		// Gather local room counts using lock-free snapshots.
 		h.roomsMu.RLock()
 		rooms := make(map[string]int, len(h.rooms))
 		for name, room := range h.rooms {
-			room.mu.RLock()
-			rooms[name] = len(room.clients)
-			room.mu.RUnlock()
+			rooms[name] = len(loadRoomSnapshot(room))
 		}
 		h.roomsMu.RUnlock()
 
