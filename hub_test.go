@@ -2071,3 +2071,53 @@ func TestRoomSnapshotConcurrentBroadcast(t *testing.T) {
 	drained:
 	}
 }
+
+func TestLoadRoomSnapshotNil(t *testing.T) {
+	// A Room with no snapshot stored should return emptyRoomSnapshot.
+	room := &Room{clients: make(map[*Client]struct{})}
+	got := loadRoomSnapshot(room)
+	if got == nil {
+		t.Fatal("loadRoomSnapshot returned nil, want emptyRoomSnapshot")
+	}
+	if len(got) != 0 {
+		t.Errorf("loadRoomSnapshot len = %d, want 0", len(got))
+	}
+}
+
+func TestParallelBroadcastToRoomExcept(t *testing.T) {
+	hub := NewHub(WithParallelBroadcast(2))
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	var conns []*websocket.Conn
+	for range 5 {
+		conns = append(conns, dial())
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	clients := hub.Clients()
+	for _, c := range clients {
+		hub.JoinRoom(c, "par-except-room")
+	}
+
+	// Exclude first client — remaining 4 should receive.
+	hub.BroadcastToRoomExcept("par-except-room", []byte("par-except"), clients[0])
+
+	// We can't map client index to conn index, so just count receivers.
+	received := 0
+	for _, conn := range conns {
+		conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+		_, _, err := conn.ReadMessage()
+		if err == nil {
+			received++
+		}
+	}
+	if received != 4 {
+		t.Errorf("expected 4 connections to receive, got %d", received)
+	}
+}
