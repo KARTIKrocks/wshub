@@ -5,6 +5,7 @@ import { useVersion } from '../hooks/useVersion';
 export default function HubDocs() {
   const { minVersion } = useVersion();
   const v110 = minVersion('v1.1.0');
+  const v112 = minVersion('v1.1.2');
 
   return (
     <ModuleSection
@@ -88,6 +89,7 @@ http.HandleFunc("/ws", hub.HandleHTTP())`} />
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithHooks(h)</td><td className="py-2 text-text-muted">Set lifecycle hooks</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithMessageHandler(fn)</td><td className="py-2 text-text-muted">Set the message handler function</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithParallelBroadcast(n)</td><td className="py-2 text-text-muted">Enable parallel broadcasting with batch size n</td></tr>
+            {v112 && <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithParallelBroadcastWorkers(n)</td><td className="py-2 text-text-muted">Set number of persistent worker goroutines for parallel broadcasting (default: runtime.NumCPU()). No effect unless WithParallelBroadcast is also set</td></tr>}
             {v110 && <>
               <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithAdapter(adapter)</td><td className="py-2 text-text-muted">Set multi-node adapter for cross-node message delivery</td></tr>
               <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithNodeID(id)</td><td className="py-2 text-text-muted">Set a stable node identifier for debugging (default: random UUID)</td></tr>

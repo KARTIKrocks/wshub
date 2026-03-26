@@ -18,9 +18,9 @@ function updateUrlVersion(version: string, latestVersion: string) {
 
 export default function VersionProvider({ children }: { children: ReactNode }) {
   const [releases, setReleases] = useState<Release[]>([]);
-  const [selectedVersion, setSelectedVersionState] = useState(() => getUrlVersion() ?? 'v1.1.0');
+  const [selectedVersion, setSelectedVersionState] = useState(() => getUrlVersion() ?? 'v1.1.2');
   const [loading, setLoading] = useState(true);
-  const [latestVersion, setLatestVersion] = useState('v1.1.0');
+  const [latestVersion, setLatestVersion] = useState('v1.1.2');
 
   useEffect(() => {
     const controller = new AbortController();
