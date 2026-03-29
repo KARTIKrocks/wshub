@@ -1306,6 +1306,14 @@ func (h *Hub) BroadcastJSON(v any) error {
 	return nil
 }
 
+// BroadcastRawJSON sends pre-encoded JSON data as a text message to all
+// connected clients. Use this instead of BroadcastJSON when the JSON is
+// already marshaled to avoid redundant serialization.
+// In multi-node mode the message is also relayed to other nodes via the adapter.
+func (h *Hub) BroadcastRawJSON(data []byte) {
+	h.Broadcast(data)
+}
+
 // broadcastExceptClients sends to all clients in snapshot not in exclude set,
 // using parallelSend when parallel mode is enabled.
 func (h *Hub) broadcastExceptClients(snapshot map[*Client]struct{}, item sendItem, exclude map[*Client]struct{}) {
