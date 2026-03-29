@@ -109,6 +109,31 @@ func BenchmarkNewJSONMessage(b *testing.B) {
 	}
 }
 
+func BenchmarkNewRawJSONMessage(b *testing.B) {
+	data, _ := json.Marshal(map[string]any{
+		"type":    "chat",
+		"message": "hello world",
+		"from":    "user-123",
+	})
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		NewRawJSONMessage(data)
+	}
+}
+
+func BenchmarkNewJSONMessage_Concurrent(b *testing.B) {
+	payload := map[string]any{
+		"type":    "chat",
+		"message": "hello world",
+		"from":    "user-123",
+	}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_, _ = NewJSONMessage(payload)
+		}
+	})
+}
+
 func BenchmarkMessage_Text(b *testing.B) {
 	msg := &Message{Data: []byte("hello world")}
 	b.ResetTimer()
@@ -207,6 +232,18 @@ func BenchmarkBroadcastJSON(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = hub.BroadcastJSON(payload)
+		for _, c := range clients {
+			drainClient(c)
+		}
+	}
+}
+
+func BenchmarkBroadcastRawJSON(b *testing.B) {
+	hub, clients := setupHubWithClients(100)
+	data, _ := json.Marshal(map[string]string{"type": "update", "data": "value"})
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		hub.BroadcastRawJSON(data)
 		for _, c := range clients {
 			drainClient(c)
 		}

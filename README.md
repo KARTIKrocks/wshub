@@ -169,6 +169,10 @@ hub.Broadcast([]byte("Hello everyone"))
 hub.BroadcastText("Hello everyone")
 hub.BroadcastJSON(map[string]string{"message": "Hello"})
 
+// Broadcast pre-encoded JSON (zero-alloc, ideal for fan-out)
+data, _ := json.Marshal(map[string]string{"message": "Hello"})
+hub.BroadcastRawJSON(data)
+
 // Broadcast with context
 ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 hub.BroadcastWithContext(ctx, data)
@@ -221,6 +225,7 @@ client.DeleteMetadata("role")
 client.Send([]byte("Hello"))
 client.SendText("Hello")
 client.SendJSON(map[string]string{"message": "Hello"})
+client.SendRawJSON(preEncodedJSON) // skip marshaling
 client.SendBinary(data)
 client.SendWithContext(ctx, data)
 
@@ -467,15 +472,15 @@ Adapters are separate Go modules -- importing the core `wshub` package never pul
 
 ### What Gets Relayed Across Nodes
 
-| Operation                                                        | Cross-Node         |
-| ---------------------------------------------------------------- | ------------------ |
-| `Broadcast`, `BroadcastBinary`, `BroadcastText`, `BroadcastJSON` | Yes                |
-| `BroadcastExcept`                                                | Yes                |
-| `BroadcastToRoom`, `BroadcastToRoomExcept`                       | Yes                |
-| `SendToUser`                                                     | Yes                |
-| `SendToClient`                                                   | Yes                |
-| `JoinRoom`, `LeaveRoom`                                          | No (local per hub) |
-| `GetClient`, `ClientCount`                                       | No (local per hub) |
+| Operation                                                                            | Cross-Node         |
+| ------------------------------------------------------------------------------------ | ------------------ |
+| `Broadcast`, `BroadcastBinary`, `BroadcastText`, `BroadcastJSON`, `BroadcastRawJSON` | Yes                |
+| `BroadcastExcept`                                                                    | Yes                |
+| `BroadcastToRoom`, `BroadcastToRoomExcept`                                           | Yes                |
+| `SendToUser`                                                                         | Yes                |
+| `SendToClient`                                                                       | Yes                |
+| `JoinRoom`, `LeaveRoom`                                                              | No (local per hub) |
+| `GetClient`, `ClientCount`                                                           | No (local per hub) |
 
 ### Global Counts (Presence)
 
@@ -744,12 +749,13 @@ Uses a persistent worker pool instead of spawning goroutines per broadcast. Enab
 
 ### Message Creation
 
-| Operation          | Time    | Allocs |
-| ------------------ | ------- | ------ |
-| `NewMessage`       | 28.0 ns | 0      |
-| `NewTextMessage`   | 27.8 ns | 0      |
-| `NewBinaryMessage` | 28.1 ns | 0      |
-| `NewJSONMessage`   | 645 ns  | 9      |
+| Operation           | Time    | Allocs |
+| ------------------- | ------- | ------ |
+| `NewMessage`        | 28.0 ns | 0      |
+| `NewTextMessage`    | 27.8 ns | 0      |
+| `NewBinaryMessage`  | 28.1 ns | 0      |
+| `NewJSONMessage`    | 645 ns  | 9      |
+| `NewRawJSONMessage` | 35 ns   | 0      |
 
 ## Thread Safety
 
