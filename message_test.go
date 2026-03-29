@@ -110,3 +110,17 @@ func TestNewJSONMessage_Error(t *testing.T) {
 		t.Error("NewJSONMessage() expected error for unmarshallable type")
 	}
 }
+
+func TestNewRawJSONMessage(t *testing.T) {
+	data := []byte(`{"key":"value"}`)
+	msg := NewRawJSONMessage(data)
+	if msg.Type != TextMessage {
+		t.Errorf("Type = %v, want TextMessage", msg.Type)
+	}
+	if string(msg.Data) != `{"key":"value"}` {
+		t.Errorf("Data = %q, want %q", msg.Data, `{"key":"value"}`)
+	}
+	if msg.Time.IsZero() {
+		t.Error("Time should not be zero")
+	}
+}

@@ -69,3 +69,15 @@ func NewJSONMessage(v any) (*Message, error) {
 		Time: time.Now(),
 	}, nil
 }
+
+// NewRawJSONMessage creates a text message from pre-encoded JSON data.
+// The caller is responsible for ensuring data is valid JSON.
+// This avoids the marshaling cost of NewJSONMessage when the JSON
+// is already available (e.g., cached or encoded once for fan-out).
+func NewRawJSONMessage(data []byte) *Message {
+	return &Message{
+		Type: TextMessage,
+		Data: data,
+		Time: time.Now(),
+	}
+}

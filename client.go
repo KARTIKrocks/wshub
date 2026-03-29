@@ -180,6 +180,13 @@ func (c *Client) SendJSON(v any) error {
 	return c.Send(msg.Data)
 }
 
+// SendRawJSON sends pre-encoded JSON data as a text message to the client.
+// Use this instead of SendJSON when the JSON is already marshaled to avoid
+// redundant serialization.
+func (c *Client) SendRawJSON(data []byte) error {
+	return c.Send(data)
+}
+
 // SendBinary sends a binary message to the client.
 func (c *Client) SendBinary(data []byte) error {
 	return c.SendMessage(BinaryMessage, data)
