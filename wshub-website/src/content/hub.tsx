@@ -6,6 +6,7 @@ export default function HubDocs() {
   const { minVersion } = useVersion();
   const v110 = minVersion('v1.1.0');
   const v112 = minVersion('v1.1.2');
+  const v113 = minVersion('v1.1.3');
 
   return (
     <ModuleSection
@@ -117,6 +118,7 @@ http.HandleFunc("/ws", hub.HandleHTTP())`} />
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">BroadcastText(text)</td><td className="py-2 text-text-muted">Send a text string to all clients</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">BroadcastBinary(data)</td><td className="py-2 text-text-muted">Send binary data to all clients</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">BroadcastJSON(v)</td><td className="py-2 text-text-muted">JSON-encode and send to all clients</td></tr>
+            {v113 && <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">BroadcastRawJSON(data)</td><td className="py-2 text-text-muted">Broadcast pre-serialized JSON bytes to all clients (0 allocs, skips marshaling)</td></tr>}
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">BroadcastWithContext(ctx, data)</td><td className="py-2 text-text-muted">Broadcast with context support</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">BroadcastExcept(data, except...)</td><td className="py-2 text-text-muted">Send text to all except specified clients</td></tr>
             {v110 && <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">BroadcastBinaryExcept(data, except...)</td><td className="py-2 text-text-muted">Send binary to all except specified clients</td></tr>}

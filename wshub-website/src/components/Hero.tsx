@@ -15,6 +15,7 @@ const features: Feature[] = [
   { title: 'Lifecycle Hooks', desc: 'Hook into connection, message, and room events' },
   { title: 'Pluggable Architecture', desc: 'Bring your own logger, metrics collector' },
   { title: 'Thread Safe', desc: 'All methods are safe for concurrent use' },
+  { title: 'Zero-Alloc JSON', desc: 'Pre-serialized JSON API skips marshaling — 0 allocs, ~35 ns per send', minVersion: 'v1.1.3' },
 ];
 
 export default function Hero() {

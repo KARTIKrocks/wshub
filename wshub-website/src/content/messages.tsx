@@ -1,7 +1,10 @@
 import CodeBlock from '../components/CodeBlock';
 import ModuleSection from '../components/ModuleSection';
+import { useVersion } from '../hooks/useVersion';
 
 export default function MessagesDocs() {
+  const { minVersion } = useVersion();
+  const v113 = minVersion('v1.1.3');
   return (
     <ModuleSection
       id="messages"
@@ -12,6 +15,7 @@ export default function MessagesDocs() {
         'Typed message representation (text and binary)',
         'Convenience helpers for text and JSON parsing',
         'Includes sender client ID and receive timestamp',
+        ...(v113 ? ['Pre-serialized JSON API for zero-alloc fan-out (~35 ns per send)'] : []),
       ]}
     >
       {/* ── Message Type ── */}
@@ -72,6 +76,44 @@ err := msg.JSON(&payload)  // Unmarshal as JSON`} />
         return nil
     }),
 )`} />
+      {/* ── Pre-serialized JSON (v1.1.3+) ── */}
+      {v113 && <>
+        <h3 id="messages-raw-json" className="text-lg font-semibold text-text-heading mt-8 mb-2">Pre-serialized JSON</h3>
+        <p className="text-text-muted mb-3">
+          When you marshal JSON once and fan it out to many clients, use the raw JSON API to skip
+          re-serialization entirely. This is ideal for high-throughput broadcast patterns where the
+          same payload goes to hundreds or thousands of connections.
+        </p>
+        <div className="overflow-x-auto mb-4">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-left">
+                <th className="py-2 pr-4 text-text-heading font-semibold">Function / Method</th>
+                <th className="py-2 text-text-heading font-semibold">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">NewRawJSONMessage(data)</td><td className="py-2 text-text-muted">Create a message from already-marshaled JSON bytes</td></tr>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">Hub.BroadcastRawJSON(data)</td><td className="py-2 text-text-muted">Broadcast pre-serialized JSON to all clients</td></tr>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">Client.SendRawJSON(data)</td><td className="py-2 text-text-muted">Send pre-serialized JSON to a single client</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <CodeBlock code={`// Marshal once, broadcast to all — 0 allocs per send (~35 ns vs ~1,000 ns)
+data, _ := json.Marshal(map[string]any{
+    "type":    "position",
+    "x":       player.X,
+    "y":       player.Y,
+    "playerID": player.ID,
+})
+
+// Fan out pre-serialized bytes (no per-client json.Marshal)
+hub.BroadcastRawJSON(data)
+
+// Or send to a single client
+client.SendRawJSON(data)`} />
+      </>}
+
     </ModuleSection>
   );
 }
