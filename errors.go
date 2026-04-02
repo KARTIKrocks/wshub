@@ -52,6 +52,10 @@ var (
 	ErrRateLimitExceeded         = errors.New("wshub: rate limit exceeded")
 	ErrMaxUserConnectionsReached = errors.New("wshub: max connections per user reached")
 
+	// Hub state errors
+	ErrHubDraining = errors.New("wshub: hub is draining")
+	ErrHubStopped  = errors.New("wshub: hub is stopped")
+
 	// Authentication errors — provided for use in BeforeConnect hooks and
 	// application-level handlers. The library does not return these directly.
 	ErrAuthenticationFailed = errors.New("wshub: authentication failed")

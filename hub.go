@@ -26,6 +26,38 @@ type registrationRequest struct {
 	result chan<- registrationResult
 }
 
+// HubState represents the lifecycle state of a [Hub].
+type HubState int32
+
+const (
+	// StateRunning means the hub is accepting new connections and processing
+	// messages normally.
+	StateRunning HubState = iota
+
+	// StateDraining means the hub has stopped accepting new connections
+	// (returning HTTP 503) but is allowing existing connections to finish
+	// their in-flight messages. Initiated by [Hub.Drain].
+	StateDraining
+
+	// StateStopped means the hub has been shut down via [Hub.Shutdown].
+	// All connections are closed and the Run loop has exited.
+	StateStopped
+)
+
+// String returns a human-readable name for the hub state.
+func (s HubState) String() string {
+	switch s {
+	case StateRunning:
+		return "running"
+	case StateDraining:
+		return "draining"
+	case StateStopped:
+		return "stopped"
+	default:
+		return "unknown"
+	}
+}
+
 // DropPolicy controls what happens when a client's send buffer is full.
 type DropPolicy int
 
@@ -106,10 +138,25 @@ type Hub struct {
 	// Metrics
 	metrics MetricsCollector
 
+	// Hub lifecycle state — lock-free reads from UpgradeConnection hot path.
+	state atomic.Int32 // HubState stored as int32
+
 	// Context for shutdown
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+
+	// Drain signaling — drainDone is closed when all clients have disconnected
+	// during drain, or when Shutdown forces completion. Allocated eagerly in
+	// NewHub to avoid data races between Drain() and handleUnregister/Shutdown.
+	drainDone chan struct{}
+	drainOnce sync.Once
+
+	// drainTimeout controls how long an idle connection can remain open after
+	// Drain() is called. Connections whose send buffers have been empty for
+	// this duration are proactively closed with CloseGoingAway (1001).
+	// Default: 30s. Set to 0 via WithDrainTimeout to disable the idle reaper.
+	drainTimeout time.Duration
 
 	// Parallel broadcast configuration
 	parallelBatchSize int  // Number of clients per goroutine (default: 100)
@@ -166,6 +213,8 @@ func NewHub(opts ...Option) *Hub {
 		useParallel:       false,
 		poolSize:          runtime.NumCPU(),
 		hookTimeout:       5 * time.Second,
+		drainDone:         make(chan struct{}),
+		drainTimeout:      30 * time.Second,
 		nodeID:            uuid.New().String(),
 	}
 
@@ -363,6 +412,23 @@ func (h *Hub) NodeID() string {
 	return h.nodeID
 }
 
+// State returns the current lifecycle state of the hub.
+// Safe for concurrent use; the read is a single atomic load.
+func (h *Hub) State() HubState {
+	return HubState(h.state.Load())
+}
+
+// IsDraining reports whether the hub is in the draining state.
+func (h *Hub) IsDraining() bool {
+	return h.State() == StateDraining
+}
+
+// IsRunning reports whether the hub is in the running state and accepting
+// new connections. Returns false when draining or stopped.
+func (h *Hub) IsRunning() bool {
+	return h.State() == StateRunning
+}
+
 // ensurePool lazily initializes the worker pool on first use.
 // This allows benchmarks that set useParallel directly (without calling Run)
 // to work correctly.
@@ -508,6 +574,13 @@ func (h *Hub) handleUnregister(client *Client) {
 	h.mu.Unlock()
 
 	h.clientCount.Add(-1)
+
+	// If draining and this was the last client, signal drain completion.
+	if h.State() == StateDraining && h.clientCount.Load() == 0 {
+		h.drainOnce.Do(func() {
+			close(h.drainDone)
+		})
+	}
 
 	// Mark the client as closed so IsClosed() returns the correct value
 	// and SendMessage short-circuits.
@@ -664,9 +737,132 @@ func (h *Hub) deleteRoomIfEmpty(roomName string, room *Room) {
 	h.roomsMu.Unlock()
 }
 
-// Shutdown gracefully shuts down the hub.
+// Drain initiates graceful connection draining. It stops accepting new
+// connections ([Hub.UpgradeConnection] returns HTTP 503) and waits for all
+// existing connections to disconnect or for the context to expire.
+//
+// During drain, idle connections whose send buffers have been empty for the
+// configured drain timeout (see [WithDrainTimeout]) are proactively closed
+// with CloseGoingAway (1001). This prevents indefinite waiting for clients
+// that are connected but doing nothing.
+//
+// Drain returns nil when all clients have disconnected, or the context
+// error if the context expires first. Calling Drain on an already-draining
+// hub blocks on the same completion signal. Calling Drain after [Hub.Shutdown]
+// returns immediately.
+//
+// Typical usage in a Kubernetes preStop hook:
+//
+//	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+//	defer cancel()
+//	hub.Drain(ctx)    // stop new connections, wait for existing ones
+//	hub.Shutdown(ctx) // force-close anything remaining
+func (h *Hub) Drain(ctx context.Context) error {
+	// Transition Running → Draining via CAS. If not Running, handle accordingly.
+	if !h.state.CompareAndSwap(int32(StateRunning), int32(StateDraining)) {
+		current := h.State()
+		if current == StateStopped {
+			return nil // already shut down
+		}
+		// current == StateDraining: fall through to wait on existing drainDone.
+	} else {
+		// We won the CAS — we are the drain initiator.
+		h.logger.Info("Hub drain initiated", "clients", h.ClientCount())
+
+		// If there are no clients, complete immediately.
+		if h.clientCount.Load() == 0 {
+			h.drainOnce.Do(func() { close(h.drainDone) })
+			h.logger.Info("Hub drain complete")
+			return nil
+		}
+
+		// Start the idle connection reaper if configured.
+		if h.drainTimeout > 0 {
+			h.wg.Add(1)
+			go h.runDrainReaper()
+		}
+	}
+
+	// Wait for all clients to disconnect or context to expire.
+	select {
+	case <-h.drainDone:
+		h.logger.Info("Hub drain complete")
+		return nil
+	case <-ctx.Done():
+		h.logger.Warn("Hub drain timeout", "remainingClients", h.ClientCount())
+		return ctx.Err()
+	}
+}
+
+// runDrainReaper periodically closes idle connections during drain.
+// A connection is considered idle when its send buffer has been continuously
+// empty for the entire drain timeout duration.
+func (h *Hub) runDrainReaper() {
+	defer h.wg.Done()
+
+	// Check interval: drain timeout / 4, but at least 100ms to avoid
+	// busy-spinning. The lower bound allows short drain timeouts (e.g. in
+	// tests) to be responsive without requiring two full seconds of ticking.
+	interval := max(h.drainTimeout/4, 100*time.Millisecond)
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	// Track when each client's send buffer was first observed empty.
+	// This map is owned exclusively by this goroutine — no lock needed.
+	firstIdleAt := make(map[*Client]time.Time)
+
+	for {
+		select {
+		case <-h.drainDone:
+			return
+		case <-h.ctx.Done():
+			return
+		case <-ticker.C:
+			now := time.Now()
+			snapshot := h.loadSnapshot()
+
+			// Remove entries for clients no longer in the snapshot.
+			for c := range firstIdleAt {
+				if _, ok := snapshot[c]; !ok {
+					delete(firstIdleAt, c)
+				}
+			}
+
+			for client := range snapshot {
+				if len(client.send) == 0 {
+					// Send buffer empty — record first-seen-idle time.
+					if _, tracked := firstIdleAt[client]; !tracked {
+						firstIdleAt[client] = now
+					} else if now.Sub(firstIdleAt[client]) >= h.drainTimeout {
+						h.logger.Info("Closing idle connection during drain",
+							"clientID", client.ID,
+						)
+						_ = client.CloseWithCode(websocket.CloseGoingAway, "server draining")
+						delete(firstIdleAt, client)
+					}
+				} else {
+					// Client has pending messages — reset idle tracking.
+					delete(firstIdleAt, client)
+				}
+			}
+		}
+	}
+}
+
+// Shutdown gracefully shuts down the hub. It force-closes all remaining
+// connections and waits for goroutines to exit. If the hub is draining,
+// Shutdown unblocks any pending [Hub.Drain] call.
 func (h *Hub) Shutdown(ctx context.Context) error {
 	h.logger.Info("Shutting down hub")
+
+	// Set state to Stopped. This rejects new connections and signals
+	// any pending Drain() to unblock.
+	h.state.Store(int32(StateStopped))
+
+	// Close drainDone to unblock any pending Drain() call.
+	h.drainOnce.Do(func() { close(h.drainDone) })
+
 	h.cancel()
 
 	// Close the adapter before waiting on goroutines — the subscriber
@@ -726,6 +922,17 @@ func (h *Hub) HandleHTTP() http.HandlerFunc {
 
 // UpgradeConnection upgrades an HTTP connection to WebSocket.
 func (h *Hub) UpgradeConnection(w http.ResponseWriter, r *http.Request, opts ...UpgradeOption) (*Client, error) {
+	// Reject connections when the hub is not running (draining or stopped).
+	// Checked before BeforeConnect hook to avoid unnecessary work.
+	if s := h.State(); s != StateRunning {
+		h.metrics.IncrementErrors("connection_rejected_draining")
+		http.Error(w, "Service draining", http.StatusServiceUnavailable)
+		if s == StateDraining {
+			return nil, fmt.Errorf("remote %s: %w", r.RemoteAddr, ErrHubDraining)
+		}
+		return nil, fmt.Errorf("remote %s: %w", r.RemoteAddr, ErrHubStopped)
+	}
+
 	// Call BeforeConnect hook
 	if h.hooks.BeforeConnect != nil {
 		if err := h.hooks.BeforeConnect(r); err != nil {

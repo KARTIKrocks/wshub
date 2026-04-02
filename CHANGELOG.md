@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-04-02
+
+### Added
+
+- **Graceful drain** — `Hub.Drain(ctx)` stops accepting new connections (HTTP 503) while letting existing connections finish in-flight messages; designed for zero-downtime rolling deploys (Kubernetes `preStop`, SIGTERM handlers)
+- `WithDrainTimeout(duration)` option to configure idle connection reaping during drain (default: 30s); connections whose send buffers have been empty for this duration are proactively closed with `CloseGoingAway` (1001); set to 0 to disable the reaper
+- `HubState` enum (`StateRunning`, `StateDraining`, `StateStopped`) with `String()` method for hub lifecycle inspection
+- `Hub.State()`, `Hub.IsRunning()`, `Hub.IsDraining()` methods for health/readiness probes
+- `ErrHubDraining` and `ErrHubStopped` sentinel errors returned by `UpgradeConnection` when the hub is not in the running state
+- `UpgradeConnection` now rejects connections during drain/stopped states with HTTP 503 before running `BeforeConnect` hooks
+- Idle connection drain reaper (`runDrainReaper`) that tracks per-client idle time and closes idle connections after the configured timeout
+- `Shutdown` now unblocks any pending `Drain()` call and transitions state to `StateStopped`
+- Documentation in `doc.go` for the graceful draining workflow with code example
+- Comprehensive test suite for drain: state transitions, no-client drain, wait-for-clients, reject-during-drain, context timeout, idle reaper, active-client survival, double-drain, drain-then-shutdown, shutdown-then-drain, and drain-timeout-zero
+
+### Changed
+
+- `Shutdown` now sets `StateStopped` and closes `drainDone` before cancelling the context, ensuring correct state transitions
+- `handleUnregister` signals drain completion when the last client disconnects during drain
+
 ## [1.1.3] - 2026-03-29
 
 ### Added
@@ -175,6 +195,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Examples: simple echo server, chat with rooms, JWT auth, metrics endpoint
 - Documentation: README, QUICKSTART, SCALABILITY, CONTRIBUTING
 
+[1.2.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.2.0
+[1.1.3]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.1.3
+[1.1.2]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.1.2
 [1.1.1]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.1.1
 [1.1.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.1.0
 [1.0.1]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.0.1
