@@ -5,6 +5,7 @@ import { useVersion } from '../hooks/useVersion';
 export default function ErrorsDocs() {
   const { minVersion } = useVersion();
   const v110 = minVersion('v1.1.0');
+  const v120 = minVersion('v1.2.0');
 
   return (
     <ModuleSection
@@ -40,6 +41,25 @@ export default function ErrorsDocs() {
           </tbody>
         </table>
       </div>
+
+      {/* ── Hub State Errors (v1.2.0+) ── */}
+      {v120 && <>
+        <h3 id="errors-hub-state" className="text-lg font-semibold text-text-heading mt-8 mb-2">Hub State Errors</h3>
+        <div className="overflow-x-auto mb-4">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-left">
+                <th className="py-2 pr-4 text-text-heading font-semibold">Error</th>
+                <th className="py-2 text-text-heading font-semibold">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">ErrHubDraining</td><td className="py-2 text-text-muted">UpgradeConnection called while the hub is draining (HTTP 503)</td></tr>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">ErrHubStopped</td><td className="py-2 text-text-muted">UpgradeConnection called after the hub has been shut down (HTTP 503)</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </>}
 
       {/* ── Client Errors ── */}
       <h3 id="errors-client" className="text-lg font-semibold text-text-heading mt-8 mb-2">Client Errors</h3>

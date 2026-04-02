@@ -35,6 +35,7 @@ const sections: SectionItem[] = [
       { id: 'hub-client-lookup', label: 'Client Lookup' },
       { id: 'hub-upgrade', label: 'Upgrade Options', minVersion: 'v1.1.0' },
       { id: 'hub-drop-policy', label: 'Drop Policy', minVersion: 'v1.1.0' },
+      { id: 'hub-drain', label: 'Graceful Drain', minVersion: 'v1.2.0' },
       { id: 'hub-shutdown', label: 'Graceful Shutdown' },
     ],
   },
@@ -146,6 +147,7 @@ const sections: SectionItem[] = [
     label: 'Errors',
     children: [
       { id: 'errors-connection', label: 'Connection Errors' },
+      { id: 'errors-hub-state', label: 'Hub State Errors', minVersion: 'v1.2.0' },
       { id: 'errors-client', label: 'Client Errors' },
       { id: 'errors-room', label: 'Room Errors' },
       { id: 'errors-limits', label: 'Limit Errors' },
