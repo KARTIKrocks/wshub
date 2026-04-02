@@ -2194,3 +2194,388 @@ func TestSendWithContext_AfterPoolShutdown(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Drain tests
+// ---------------------------------------------------------------------------
+
+func TestHubState_String(t *testing.T) {
+	tests := []struct {
+		state HubState
+		want  string
+	}{
+		{StateRunning, "running"},
+		{StateDraining, "draining"},
+		{StateStopped, "stopped"},
+		{HubState(99), "unknown"},
+	}
+	for _, tt := range tests {
+		if got := tt.state.String(); got != tt.want {
+			t.Errorf("HubState(%d).String() = %q, want %q", tt.state, got, tt.want)
+		}
+	}
+}
+
+func TestHubState_Transitions(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+
+	// Initially running.
+	if got := hub.State(); got != StateRunning {
+		t.Fatalf("initial State() = %v, want StateRunning", got)
+	}
+	if !hub.IsRunning() {
+		t.Fatal("IsRunning() should be true initially")
+	}
+	if hub.IsDraining() {
+		t.Fatal("IsDraining() should be false initially")
+	}
+
+	// Drain → StateDraining.
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	hub.Drain(ctx)
+
+	if got := hub.State(); got != StateDraining {
+		t.Fatalf("after Drain, State() = %v, want StateDraining", got)
+	}
+	if hub.IsRunning() {
+		t.Fatal("IsRunning() should be false after Drain")
+	}
+	if !hub.IsDraining() {
+		t.Fatal("IsDraining() should be true after Drain")
+	}
+
+	// Shutdown → StateStopped.
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), time.Second)
+	defer shutdownCancel()
+	hub.Shutdown(shutdownCtx)
+
+	if got := hub.State(); got != StateStopped {
+		t.Fatalf("after Shutdown, State() = %v, want StateStopped", got)
+	}
+	if hub.IsRunning() {
+		t.Fatal("IsRunning() should be false after Shutdown")
+	}
+	if hub.IsDraining() {
+		t.Fatal("IsDraining() should be false after Shutdown")
+	}
+}
+
+func TestDrain_NoClients(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	err := hub.Drain(ctx)
+	if err != nil {
+		t.Fatalf("Drain with 0 clients: %v", err)
+	}
+	if hub.State() != StateDraining {
+		t.Errorf("State = %v, want StateDraining", hub.State())
+	}
+}
+
+func TestDrain_WaitsForClients(t *testing.T) {
+	hub := NewHub(WithDrainTimeout(0)) // no reaper — clients must close themselves
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	conn1 := dial()
+	conn2 := dial()
+	time.Sleep(50 * time.Millisecond)
+
+	if hub.ClientCount() != 2 {
+		t.Fatalf("ClientCount = %d, want 2", hub.ClientCount())
+	}
+
+	drainDone := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		drainDone <- hub.Drain(ctx)
+	}()
+
+	// Give drain a moment to start, then verify it's still blocking.
+	time.Sleep(100 * time.Millisecond)
+	select {
+	case err := <-drainDone:
+		t.Fatalf("Drain returned early: %v", err)
+	default:
+	}
+
+	// Close clients one by one.
+	conn1.Close()
+	time.Sleep(50 * time.Millisecond)
+
+	select {
+	case err := <-drainDone:
+		t.Fatalf("Drain returned after 1 of 2 clients closed: %v", err)
+	default:
+	}
+
+	conn2.Close()
+
+	select {
+	case err := <-drainDone:
+		if err != nil {
+			t.Fatalf("Drain error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Drain did not return after all clients closed")
+	}
+}
+
+func TestDrain_RejectsNewConnections(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	_, server := testDialer(t, hub)
+
+	// Start drain (no clients, so it completes immediately).
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	hub.Drain(ctx)
+
+	// Try to connect — should get rejected.
+	dialer := websocket.Dialer{}
+	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
+	conn, resp, err := dialer.Dial(url, nil)
+	if conn != nil {
+		conn.Close()
+		t.Fatal("expected connection to be rejected during drain")
+	}
+	if err == nil {
+		t.Fatal("expected error during drain upgrade")
+	}
+	if resp != nil && resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("expected 503, got %d", resp.StatusCode)
+	}
+}
+
+func TestDrain_ContextTimeout(t *testing.T) {
+	hub := NewHub(WithDrainTimeout(0)) // no reaper
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	dial() // keep connection open
+	time.Sleep(50 * time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	err := hub.Drain(ctx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected DeadlineExceeded, got %v", err)
+	}
+	// Client should still be connected.
+	if hub.ClientCount() != 1 {
+		t.Errorf("ClientCount = %d, want 1 (client should still be connected)", hub.ClientCount())
+	}
+}
+
+func TestDrain_IdleReaper(t *testing.T) {
+	hub := NewHub(WithDrainTimeout(200 * time.Millisecond))
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	dial() // idle client — sends nothing
+	time.Sleep(50 * time.Millisecond)
+
+	if hub.ClientCount() != 1 {
+		t.Fatalf("ClientCount = %d, want 1", hub.ClientCount())
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	err := hub.Drain(ctx)
+	if err != nil {
+		t.Fatalf("Drain: %v", err)
+	}
+
+	// The idle reaper should have closed the connection.
+	if hub.ClientCount() != 0 {
+		t.Errorf("ClientCount = %d, want 0 after reaper", hub.ClientCount())
+	}
+}
+
+func TestDrain_ActiveClientNotReaped(t *testing.T) {
+	// Use a drain timeout much longer than the drain context so the reaper
+	// never gets a chance to close the client before the drain context expires.
+	hub := NewHub(WithDrainTimeout(10 * time.Second))
+	go hub.Run()
+
+	dial, _ := testDialer(t, hub)
+	conn := dial()
+	time.Sleep(50 * time.Millisecond)
+
+	// Drain with a short context — should timeout because client is still connected
+	// and the reaper's idle threshold (10s) far exceeds the drain context (300ms).
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	err := hub.Drain(ctx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected DeadlineExceeded for active client, got %v", err)
+	}
+
+	// Client should still be connected — reaper didn't close it.
+	if hub.ClientCount() != 1 {
+		t.Errorf("ClientCount = %d, want 1 (client should survive reaper)", hub.ClientCount())
+	}
+
+	// Clean up: close the connection before shutdown to avoid races.
+	conn.Close()
+	time.Sleep(50 * time.Millisecond)
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), time.Second)
+	defer shutdownCancel()
+	hub.Shutdown(shutdownCtx)
+}
+
+func TestDrain_DoubleDrain(t *testing.T) {
+	hub := NewHub(WithDrainTimeout(0))
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	conn := dial()
+	time.Sleep(50 * time.Millisecond)
+
+	// Launch two concurrent Drain calls.
+	done1 := make(chan error, 1)
+	done2 := make(chan error, 1)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	go func() { done1 <- hub.Drain(ctx) }()
+	go func() { done2 <- hub.Drain(ctx) }()
+
+	time.Sleep(100 * time.Millisecond)
+	conn.Close()
+
+	for i, ch := range []chan error{done1, done2} {
+		select {
+		case err := <-ch:
+			if err != nil {
+				t.Errorf("Drain[%d] returned error: %v", i, err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("Drain[%d] did not return", i)
+		}
+	}
+}
+
+func TestDrain_ThenShutdown(t *testing.T) {
+	hub := NewHub(WithDrainTimeout(0))
+	go hub.Run()
+
+	dial, _ := testDialer(t, hub)
+	dial() // keep connection open
+	time.Sleep(50 * time.Millisecond)
+
+	drainDone := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		drainDone <- hub.Drain(ctx)
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Shutdown should unblock the pending Drain.
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer shutdownCancel()
+	hub.Shutdown(shutdownCtx)
+
+	select {
+	case err := <-drainDone:
+		if err != nil {
+			t.Fatalf("Drain returned error after Shutdown: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Drain did not unblock after Shutdown")
+	}
+
+	if hub.State() != StateStopped {
+		t.Errorf("State = %v, want StateStopped", hub.State())
+	}
+}
+
+func TestShutdown_ThenDrain(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	hub.Shutdown(ctx)
+
+	// Drain after Shutdown should return immediately.
+	drainCtx, drainCancel := context.WithTimeout(context.Background(), time.Second)
+	defer drainCancel()
+	err := hub.Drain(drainCtx)
+	if err != nil {
+		t.Fatalf("Drain after Shutdown: %v", err)
+	}
+}
+
+func TestDrain_TimeoutZero(t *testing.T) {
+	hub := NewHub(WithDrainTimeout(0))
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	dial, _ := testDialer(t, hub)
+	dial() // idle client
+	time.Sleep(50 * time.Millisecond)
+
+	// With drainTimeout=0, idle reaper should NOT run.
+	// Drain should timeout since client won't close itself.
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	err := hub.Drain(ctx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected DeadlineExceeded with drainTimeout=0, got %v", err)
+	}
+
+	if hub.ClientCount() != 1 {
+		t.Errorf("ClientCount = %d, want 1 (no reaper should have run)", hub.ClientCount())
+	}
+}

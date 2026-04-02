@@ -118,6 +118,20 @@ func WithAdapter(adapter Adapter) Option {
 	}
 }
 
+// WithDrainTimeout sets the maximum time an idle connection can remain open
+// after [Hub.Drain] is called. Connections whose send buffers have been empty
+// for this duration are proactively closed with CloseGoingAway (1001).
+//
+// Default: 30s. Set to 0 to disable the idle connection reaper entirely,
+// relying solely on natural client disconnection during drain.
+func WithDrainTimeout(timeout time.Duration) Option {
+	return func(h *Hub) {
+		if timeout >= 0 {
+			h.drainTimeout = timeout
+		}
+	}
+}
+
 // WithPresence enables periodic presence broadcasting for multi-node stats.
 // Each hub publishes its local client and room counts at the given interval,
 // allowing GlobalClientCount and GlobalRoomCount to return cluster-wide totals.

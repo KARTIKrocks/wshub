@@ -14,7 +14,7 @@ A production-ready, scalable WebSocket package for Go with support for rooms, br
 
 ## Features
 
-- **Production-Ready**: Proper concurrency, graceful shutdown, error handling
+- **Production-Ready**: Proper concurrency, graceful shutdown & drain, error handling
 - **Horizontally Scalable**: Multi-node support via adapter pattern (Redis, NATS, or custom)
 - **Pluggable**: Bring your own logger, metrics
 - **Middleware System**: Chain handlers with custom logic
@@ -90,10 +90,11 @@ func main() {
         log.Fatal(err)
     }
 
-    // Graceful shutdown
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    // Graceful drain + shutdown
+    ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
     defer cancel()
-    hub.Shutdown(ctx)
+    hub.Drain(ctx)    // stop new connections, wait for existing ones
+    hub.Shutdown(ctx) // force-close anything remaining
 }
 ```
 
@@ -498,6 +499,47 @@ hub.GlobalRoomCount("general")   // room members across all nodes
 
 Nodes that miss 3 consecutive heartbeats are automatically evicted from the totals.
 
+## Graceful Draining
+
+For zero-downtime rolling deploys (e.g. Kubernetes), call `Drain` before `Shutdown`. Drain stops accepting new connections (HTTP 503) while letting existing connections finish their in-flight messages. Idle connections are proactively closed after the drain timeout.
+
+```go
+// preStop / SIGTERM handler
+ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+defer cancel()
+hub.Drain(ctx)    // stop new connections, wait for existing ones
+hub.Shutdown(ctx) // force-close anything remaining
+```
+
+### Configuration
+
+```go
+hub := wshub.NewHub(
+    // Configure idle connection reaper timeout (default: 30s).
+    // Connections idle for this duration during drain are closed with CloseGoingAway.
+    // Set to 0 to disable the reaper entirely.
+    wshub.WithDrainTimeout(15 * time.Second),
+)
+```
+
+### Health & Readiness Probes
+
+```go
+// Readiness probe — returns 503 when draining or stopped
+http.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+    if hub.IsRunning() {
+        w.WriteHeader(http.StatusOK)
+    } else {
+        w.WriteHeader(http.StatusServiceUnavailable)
+    }
+})
+
+// Liveness probe — check hub state
+http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprintf(w, "state: %s", hub.State())
+})
+```
+
 ## Backpressure Control
 
 When a client's send buffer is full, configure how messages are handled:
@@ -540,8 +582,12 @@ case wshub.ErrNotInRoom:
     // Client not in room
 case wshub.ErrConnectionClosed:
     // Connection was closed
-case wshub.ErrWriteTimeout:
-    // Write buffer full
+case wshub.ErrSendBufferFull:
+    // Send buffer full
+case wshub.ErrHubDraining:
+    // Hub is draining, not accepting new connections
+case wshub.ErrHubStopped:
+    // Hub has been shut down
 case wshub.ErrMaxConnectionsReached:
     // Connection limit reached
 case wshub.ErrMaxRoomsReached:
@@ -629,7 +675,7 @@ Save as `index.html` and open in a browser while the server is running:
 2. **Use hooks for lifecycle events** instead of wrapping the hub
 3. **Implement proper logging and metrics** for production observability
 4. **Set appropriate limits** to prevent resource exhaustion
-5. **Use graceful shutdown** with context timeout
+5. **Use `Drain` then `Shutdown`** for zero-downtime deploys
 6. **Handle errors appropriately** - don't ignore send failures
 7. **Use rooms for targeted messaging** instead of filtering in handlers
 8. **Set user ID after authentication** for multi-device support

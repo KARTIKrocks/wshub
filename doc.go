@@ -22,6 +22,22 @@
 // [Hub.HandleHTTP] handler. Each connection spawns a read pump and write pump
 // goroutine managed by the hub. Use [Hub.Shutdown] for graceful teardown.
 //
+// # Graceful Draining
+//
+// For zero-downtime rolling deploys (e.g. Kubernetes), call [Hub.Drain]
+// before [Hub.Shutdown]. Drain stops accepting new connections (returning
+// HTTP 503) while letting existing connections finish their in-flight
+// messages. Idle connections are proactively closed after the configured
+// drain timeout (see [WithDrainTimeout]). Inspect the hub's lifecycle
+// state with [Hub.State], [Hub.IsRunning], and [Hub.IsDraining] to
+// implement health and readiness probes:
+//
+//	// preStop / SIGTERM handler
+//	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+//	defer cancel()
+//	hub.Drain(ctx)    // stop new connections, wait for existing ones
+//	hub.Shutdown(ctx) // force-close anything remaining
+//
 // # Rooms
 //
 // Clients can join and leave named rooms via [Hub.JoinRoom] and [Hub.LeaveRoom].
