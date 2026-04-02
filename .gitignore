@@ -10,6 +10,9 @@
 *.swo
 *~
 
+# FE
+wshub-website
+
 # OS
 .DS_Store
 Thumbs.db
