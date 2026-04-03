@@ -33,17 +33,17 @@ Zero-allocation broadcasting, nanosecond lookups — built for scale. ([Full ben
 
 | Operation                | Scale             | Time    | Allocs |
 | ------------------------ | ----------------- | ------- | ------ |
-| `Broadcast`              | 100,000 clients   | 29.9 ms | 0      |
-| `Broadcast`              | 1,000,000 clients | 367 ms  | 0      |
-| `BroadcastToRoom`        | 1,000,000 clients | 257 ms  | 0      |
-| `BroadcastParallel`      | 50,000 clients    | 5.4 ms  | 2      |
-| `SendToClient`           | 1,000,000 clients | 116 ns  | 0      |
-| `SendToUser`             | 1,000,000 users   | 169 ns  | 1      |
-| `GetClient`              | 1,000 clients     | 16.0 ns | 0      |
-| `GlobalClientCount`      | 500 nodes         | 3.8 μs  | 0      |
-| Middleware chain (built) | 3 middlewares     | 12.4 ns | 0      |
+| `Broadcast`              | 100,000 clients   | 22.0 ms | 0      |
+| `Broadcast`              | 1,000,000 clients | 263 ms  | 0      |
+| `BroadcastToRoom`        | 1,000,000 clients | 260 ms  | 0      |
+| `BroadcastParallel`      | 50,000 clients    | 5.5 ms  | 1      |
+| `SendToClient`           | 1,000,000 clients | 130 ns  | 0      |
+| `SendToUser`             | 1,000,000 users   | 192 ns  | 1      |
+| `GetClient`              | 1,000 clients     | 17.7 ns | 0      |
+| `GlobalClientCount`      | 500 nodes         | 4.2 μs  | 0      |
+| Middleware chain (built) | 3 middlewares     | 14.3 ns | 0      |
 
-> Message size has no impact on dispatch — 64 B and 64 KB both take ~5.5 μs for 100 clients.
+> Message size has no impact on dispatch — 64 B and 64 KB both take ~5.7 μs for 100 clients.
 
 ## Installation
 
@@ -706,44 +706,44 @@ go test -bench=. -benchmem ./...
 
 | Operation               | Clients   | Time    | Allocs |
 | ----------------------- | --------- | ------- | ------ |
-| `Broadcast`             | 100,000   | 29.9 ms | 0      |
-| `Broadcast`             | 1,000,000 | 367 ms  | 0      |
-| `BroadcastToRoom`       | 100,000   | 24.5 ms | 0      |
-| `BroadcastToRoom`       | 1,000,000 | 257 ms  | 0      |
-| `BroadcastExcept`       | 100,000   | 29.4 ms | 1      |
-| `BroadcastExcept`       | 1,000,000 | 341 ms  | 1      |
-| `BroadcastToRoomExcept` | 100,000   | 24.2 ms | 1      |
-| `BroadcastToRoomExcept` | 1,000,000 | 285 ms  | 1      |
+| `Broadcast`             | 100,000   | 22.0 ms | 0      |
+| `Broadcast`             | 1,000,000 | 263 ms  | 0      |
+| `BroadcastToRoom`       | 100,000   | 23.2 ms | 0      |
+| `BroadcastToRoom`       | 1,000,000 | 260 ms  | 0      |
+| `BroadcastExcept`       | 100,000   | 25.9 ms | 1      |
+| `BroadcastExcept`       | 1,000,000 | 294 ms  | 1      |
+| `BroadcastToRoomExcept` | 100,000   | 26.0 ms | 1      |
+| `BroadcastToRoomExcept` | 1,000,000 | 277 ms  | 1      |
 
-### Parallel Broadcast (worker pool, 2 allocs)
+### Parallel Broadcast (worker pool, 0–1 allocs)
 
-Uses a persistent worker pool instead of spawning goroutines per broadcast. Enable with `WithParallelBroadcast(batchSize)`.
+Uses a persistent worker pool instead of spawning goroutines per broadcast. The hub snapshot slice is pre-built on register/unregister, so parallel broadcasts allocate nothing beyond the pool task. Enable with `WithParallelBroadcast(batchSize)`.
 
 | Operation           | Clients | Time   | Allocs |
 | ------------------- | ------- | ------ | ------ |
-| `BroadcastParallel` | 100     | 5.9 μs | 1      |
-| `BroadcastParallel` | 10,000  | 705 μs | 2      |
-| `BroadcastParallel` | 50,000  | 5.4 ms | 2      |
+| `BroadcastParallel` | 100     | 5.6 μs | 0      |
+| `BroadcastParallel` | 10,000  | 989 μs | 1      |
+| `BroadcastParallel` | 50,000  | 5.5 ms | 1      |
 
 ### Targeted Send (O(1) at any scale, zero allocations)
 
 | Operation      | Scale             | Time   | Allocs |
 | -------------- | ----------------- | ------ | ------ |
-| `SendToClient` | 100,000 clients   | 106 ns | 0      |
-| `SendToClient` | 1,000,000 clients | 116 ns | 0      |
-| `SendToUser`   | 100,000 users     | 163 ns | 1      |
-| `SendToUser`   | 1,000,000 users   | 169 ns | 1      |
+| `SendToClient` | 100,000 clients   | 129 ns | 0      |
+| `SendToClient` | 1,000,000 clients | 130 ns | 0      |
+| `SendToUser`   | 100,000 users     | 198 ns | 1      |
+| `SendToUser`   | 1,000,000 users   | 192 ns | 1      |
 
 ### Global Counts — Presence (zero allocations)
 
 | Operation           | Nodes | Time   | Allocs |
 | ------------------- | ----- | ------ | ------ |
-| `GlobalClientCount` | 5     | 53 ns  | 0      |
-| `GlobalClientCount` | 50    | 330 ns | 0      |
-| `GlobalClientCount` | 100   | 670 ns | 0      |
-| `GlobalClientCount` | 500   | 3.8 μs | 0      |
-| `GlobalRoomCount`   | 5     | 108 ns | 0      |
-| `GlobalRoomCount`   | 50    | 815 ns | 0      |
+| `GlobalClientCount` | 5     | 63 ns  | 0      |
+| `GlobalClientCount` | 50    | 397 ns | 0      |
+| `GlobalClientCount` | 100   | 715 ns | 0      |
+| `GlobalClientCount` | 500   | 4.2 μs | 0      |
+| `GlobalRoomCount`   | 5     | 118 ns | 0      |
+| `GlobalRoomCount`   | 50    | 823 ns | 0      |
 | `GlobalRoomCount`   | 100   | 1.7 μs | 0      |
 | `GlobalRoomCount`   | 500   | 9.7 μs | 0      |
 
@@ -751,36 +751,36 @@ Uses a persistent worker pool instead of spawning goroutines per broadcast. Enab
 
 | Payload | Time (100 clients) | Allocs |
 | ------- | ------------------ | ------ |
-| 64 B    | 6.5 μs             | 0      |
-| 512 B   | 7.2 μs             | 0      |
-| 4 KB    | 5.9 μs             | 0      |
-| 64 KB   | 5.5 μs             | 0      |
+| 64 B    | 5.7 μs             | 0      |
+| 512 B   | 5.5 μs             | 0      |
+| 4 KB    | 5.4 μs             | 0      |
+| 64 KB   | 5.7 μs             | 0      |
 
 ### Client & Room Lookups (zero allocations)
 
 | Operation                   | Time    | Allocs |
 | --------------------------- | ------- | ------ |
-| `GetClient` (1,000 clients) | 16.0 ns | 0      |
-| `ClientCount`               | 0.30 ns | 0      |
-| `GetClientByUserID`         | 48.0 ns | 0      |
-| `RoomExists`                | 16.6 ns | 0      |
-| `RoomCount`                 | 14.8 ns | 0      |
-| `GetMetadata`               | 16.0 ns | 0      |
-| `SetMetadata`               | 27.6 ns | 0      |
+| `GetClient` (1,000 clients) | 17.7 ns | 0      |
+| `ClientCount`               | 0.28 ns | 0      |
+| `GetClientByUserID`         | 51.3 ns | 0      |
+| `RoomExists`                | 23.6 ns | 0      |
+| `RoomCount`                 | 22.1 ns | 0      |
+| `GetMetadata`               | 17.0 ns | 0      |
+| `SetMetadata`               | 30.6 ns | 0      |
 
 ### Client Send
 
 | Operation     | Time    | Allocs |
 | ------------- | ------- | ------ |
-| `Send` (text) | 70.6 ns | 1      |
-| `SendJSON`    | 417 ns  | 5      |
+| `Send` (text) | 82.9 ns | 1      |
+| `SendJSON`    | 495 ns  | 5      |
 
 ### Middleware Chain
 
 | Mode                 | Time    | Allocs |
 | -------------------- | ------- | ------ |
-| Built (cached)       | 12.4 ns | 0      |
-| Unbuilt (on-the-fly) | 15.2 ns | 0      |
+| Built (cached)       | 14.3 ns | 0      |
+| Unbuilt (on-the-fly) | 17.0 ns | 0      |
 
 > Always call `Build()` on your middleware chain for best performance.
 
@@ -788,20 +788,20 @@ Uses a persistent worker pool instead of spawning goroutines per broadcast. Enab
 
 | Operation                 | Time    | Allocs |
 | ------------------------- | ------- | ------ |
-| `GetClient`               | 23.8 ns | 0      |
-| `ClientCount`             | 0.18 ns | 0      |
-| `Metadata` (set+get)      | 62.5 ns | 0      |
-| `Broadcast` (100 clients) | 4.4 μs  | 121    |
+| `GetClient`               | 31.0 ns | 0      |
+| `ClientCount`             | 0.23 ns | 0      |
+| `Metadata` (set+get)      | 76.5 ns | 0      |
+| `Broadcast` (100 clients) | 5.9 μs  | 120    |
 
 ### Message Creation
 
 | Operation           | Time    | Allocs |
 | ------------------- | ------- | ------ |
-| `NewMessage`        | 28.0 ns | 0      |
-| `NewTextMessage`    | 27.8 ns | 0      |
-| `NewBinaryMessage`  | 28.1 ns | 0      |
-| `NewJSONMessage`    | 645 ns  | 9      |
-| `NewRawJSONMessage` | 35 ns   | 0      |
+| `NewMessage`        | 30.5 ns | 0      |
+| `NewTextMessage`    | 32.0 ns | 0      |
+| `NewBinaryMessage`  | 30.2 ns | 0      |
+| `NewJSONMessage`    | 820 ns  | 9      |
+| `NewRawJSONMessage` | 30.9 ns | 0      |
 
 ## Thread Safety
 
