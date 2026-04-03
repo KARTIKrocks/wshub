@@ -19,6 +19,8 @@ linters:
         - name: exported
           disabled: true
   exclusions:
+    paths:
+      - wshub-website/
     rules:
       - linters:
           - errcheck
