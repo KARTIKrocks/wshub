@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-04-03
+
+### Fixed
+
+- **`handleUnregister` now drains the send buffer** — when a client disconnects abnormally (readPump exits), any messages buffered in `client.send` are now drained immediately rather than waiting for GC; previously these were silently leaked until the client struct was collected
+- **`sendMu` always released in DropOldest path** — extracted `trySendDropOldest` helper uses `defer sendMu.Unlock()` so the per-client mutex is correctly released even if a send-on-closed-channel panic propagates through the recover guard in `trySendErr`
+
 ## [1.2.0] - 2026-04-02
 
 ### Added
@@ -195,6 +202,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Examples: simple echo server, chat with rooms, JWT auth, metrics endpoint
 - Documentation: README, QUICKSTART, SCALABILITY, CONTRIBUTING
 
+[1.2.1]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.2.1
 [1.2.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.2.0
 [1.1.3]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.1.3
 [1.1.2]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.1.2

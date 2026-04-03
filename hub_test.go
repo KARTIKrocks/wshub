@@ -2579,3 +2579,92 @@ func TestDrain_TimeoutZero(t *testing.T) {
 		t.Errorf("ClientCount = %d, want 1 (no reaper should have run)", hub.ClientCount())
 	}
 }
+
+func TestHandleUnregisterDrainsSendBuffer(t *testing.T) {
+	hub := NewHub()
+
+	// Create a real WebSocket connection pair so closeConn() won't
+	// panic on nil. No readPump/writePump is started.
+	serverConnCh := make(chan *websocket.Conn, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upgrader := websocket.Upgrader{}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		serverConnCh <- conn
+	}))
+	t.Cleanup(server.Close)
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
+	clientConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { clientConn.Close() })
+	serverConn := <-serverConnCh
+
+	client := &Client{
+		ID:       "drain-test",
+		hub:      hub,
+		conn:     serverConn,
+		send:     make(chan sendItem, 4),
+		done:     make(chan struct{}),
+		metadata: make(map[string]any),
+		rooms:    make(map[string]struct{}),
+	}
+
+	// Register the client directly in the hub maps.
+	hub.mu.Lock()
+	hub.clients[client] = struct{}{}
+	hub.clientIndex[client.ID] = client
+	hub.mu.Unlock()
+	hub.clientCount.Add(1)
+
+	// Fill the send buffer with messages.
+	client.send <- sendItem{data: []byte("msg1")}
+	client.send <- sendItem{data: []byte("msg2")}
+	client.send <- sendItem{data: []byte("msg3")}
+
+	if n := len(client.send); n != 3 {
+		t.Fatalf("expected 3 buffered messages, got %d", n)
+	}
+
+	// Call handleUnregister directly — no writePump competing.
+	hub.handleUnregister(client)
+
+	// The send buffer should be drained.
+	if n := len(client.send); n != 0 {
+		t.Errorf("send buffer has %d messages after unregister, want 0", n)
+	}
+}
+
+func TestHandleUnregisterDropOldestUnlockOnPanic(t *testing.T) {
+	// Verify that the sendMu is properly released when a
+	// send-on-closed-channel panic occurs inside the DropOldest path.
+	hub := NewHub(WithDropPolicy(DropOldest))
+
+	client := &Client{
+		ID:       "dropoldest-unlock",
+		hub:      hub,
+		send:     make(chan sendItem, 1),
+		metadata: make(map[string]any),
+		rooms:    make(map[string]struct{}),
+	}
+
+	// Fill the buffer so trySend enters the DropOldest path.
+	client.send <- sendItem{data: []byte("fill")}
+
+	// Close the channel to simulate handleUnregister closing it.
+	close(client.send)
+
+	// trySend should not panic (recover catches it).
+	hub.trySend(client, sendItem{data: []byte("after close")})
+
+	// sendMu should be unlocked — a TryLock must succeed.
+	if !client.sendMu.TryLock() {
+		t.Error("sendMu still held after trySend on closed channel with DropOldest")
+	} else {
+		client.sendMu.Unlock()
+	}
+}

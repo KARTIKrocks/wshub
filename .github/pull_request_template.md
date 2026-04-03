@@ -1,10 +1,10 @@
 ## Summary
 
-<!-- Brief description of the changes -->
+<!-- Brief description of what this PR does and why -->
 
 ## Motivation
 
-<!-- Why is this change needed? Link to any related issues. -->
+<!-- Why is this change needed? Link to related issues -->
 
 Fixes #
 
@@ -14,8 +14,17 @@ Fixes #
 
 -
 
+## Test Plan
+
+<!-- How was this tested? What should reviewers run/check? -->
+
+- [ ] `make all` passes (fmt, vet, lint, test, build)
+
 ## Checklist
 
-- [ ] fmt, vet, lint, test, build passes (`make all`)
-- [ ] New code has tests where appropriate
-- [ ] Breaking changes are documented
+- [ ] Tests added or updated for changed behavior
+- [ ] No breaking changes — or breaking changes described below
+
+### Breaking Changes
+
+<!-- If applicable, describe what breaks and how to migrate -->

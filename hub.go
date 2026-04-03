@@ -591,16 +591,23 @@ func (h *Hub) handleUnregister(client *Client) {
 	}
 	client.mu.Unlock()
 
-	// Signal writePump to exit immediately via the done channel. Without
-	// this, writePump would sit idle until the next ping ticker fires
-	// (up to PingPeriod). We use a separate done channel instead of
-	// closing client.send to avoid racing with concurrent broadcasts.
+	// Signal writePump to exit immediately via the done channel, then
+	// kill the underlying connection so any in-flight write fails.
 	client.closeDone()
-
-	// Close the underlying connection so writePump exits on its next
-	// write attempt. closeConn is protected by sync.Once so multiple
-	// calls are safe.
 	client.closeConn()
+
+	// Drain any messages left in the send buffer to free memory
+	// immediately rather than waiting for GC. We drain instead of
+	// close(client.send) to avoid a data race with concurrent senders
+	// in trySendErr that have already passed the closed check.
+drain:
+	for {
+		select {
+		case <-client.send:
+		default:
+			break drain
+		}
+	}
 
 	h.metrics.DecrementConnections()
 	h.logger.Info("Client unregistered",
@@ -1055,45 +1062,53 @@ func (h *Hub) trySendErr(client *Client, item sendItem) (ok bool) {
 	// Buffer is full — apply drop policy.
 	switch h.dropPolicy {
 	case DropOldest:
-		// Lock per-client to make evict+enqueue atomic w.r.t. other writers.
-		client.sendMu.Lock()
-
-		// Re-check: buffer may have drained while we waited for the lock.
-		select {
-		case client.send <- item:
-			client.sendMu.Unlock()
+		if h.trySendDropOldest(client, item) {
 			return true
-		default:
 		}
-
-		// Evict+enqueue loop: retry up to 2 times to avoid losing both the
-		// evicted message and the new message when a fast-path writer races
-		// us between evict and enqueue.
-		for attempts := 0; attempts < 2; attempts++ {
-			// Evict the oldest message.
-			select {
-			case dropped := <-client.send:
-				h.notifySendDropped(client, dropped.data)
-			default:
-				// Drained concurrently by writePump — buffer now has space.
-			}
-
-			// Enqueue the new message.
-			select {
-			case client.send <- item:
-				client.sendMu.Unlock()
-				return true
-			default:
-				// Fast-path writer filled the slot; retry evict+enqueue.
-			}
-		}
-		client.sendMu.Unlock()
 
 	default:
 		// DropNewest: discard the new message.
 	}
 
 	h.notifySendDropped(client, item.data)
+	return false
+}
+
+// trySendDropOldest is the DropOldest sub-path of trySendErr. It
+// serializes evict+enqueue via sendMu and uses defer to guarantee the
+// mutex is released even if a send-on-closed-channel panic propagates
+// through to the recover guard in trySendErr.
+func (h *Hub) trySendDropOldest(client *Client, item sendItem) bool {
+	client.sendMu.Lock()
+	defer client.sendMu.Unlock()
+
+	// Re-check: buffer may have drained while we waited for the lock.
+	select {
+	case client.send <- item:
+		return true
+	default:
+	}
+
+	// Evict+enqueue loop: retry up to 2 times to avoid losing both the
+	// evicted message and the new message when a fast-path writer races
+	// us between evict and enqueue.
+	for attempts := 0; attempts < 2; attempts++ {
+		// Evict the oldest message.
+		select {
+		case dropped := <-client.send:
+			h.notifySendDropped(client, dropped.data)
+		default:
+			// Drained concurrently by writePump — buffer now has space.
+		}
+
+		// Enqueue the new message.
+		select {
+		case client.send <- item:
+			return true
+		default:
+			// Fast-path writer filled the slot; retry evict+enqueue.
+		}
+	}
 	return false
 }
 
