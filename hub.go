@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -72,6 +73,13 @@ const (
 	DropOldest
 )
 
+// hubSnapshot holds both a map and a pre-built slice of clients so that
+// broadcast paths can use the slice directly without allocating on every call.
+type hubSnapshot struct {
+	set   map[*Client]struct{} // O(1) membership checks
+	slice []*Client            // pre-built for parallelSend / iteration
+}
+
 // Room represents a chat room with its own lock for better concurrency.
 type Room struct {
 	mu       sync.RWMutex
@@ -97,7 +105,7 @@ type Hub struct {
 	clientIndex map[string]*Client
 
 	// Lock-free snapshot for broadcasting
-	clientsSnapshot atomic.Value // map[*Client]struct{}
+	clientsSnapshot atomic.Value // hubSnapshot
 
 	// Atomic client count — avoids locking h.mu for ClientCount().
 	clientCount atomic.Int64
@@ -252,8 +260,8 @@ func NewHub(opts ...Option) *Hub {
 		}
 	}
 
-	// Initialize snapshot with empty map
-	h.clientsSnapshot.Store(make(map[*Client]struct{}))
+	// Initialize snapshot with empty hubSnapshot
+	h.clientsSnapshot.Store(hubSnapshot{set: make(map[*Client]struct{}), slice: nil})
 
 	// Initialize presence cache only when both presence and adapter are
 	// configured. Done here (after all options) rather than in WithPresence
@@ -272,9 +280,9 @@ func NewHub(opts ...Option) *Hub {
 }
 
 // emptySnapshot is returned by loadSnapshot when the atomic.Value has not
-// been initialized yet. Using a package-level variable avoids a new map
-// allocation on every call.
-var emptySnapshot = map[*Client]struct{}{}
+// been initialized yet. Using a package-level variable avoids allocation
+// on every call.
+var emptySnapshot = hubSnapshot{set: map[*Client]struct{}{}, slice: nil}
 
 // emptyRoomSnapshot is returned by loadRoomSnapshot when the room's
 // atomic.Value has not been initialized yet.
@@ -283,12 +291,12 @@ var emptyRoomSnapshot = []*Client{}
 // loadSnapshot returns the current lock-free client snapshot. It uses the
 // comma-ok type assertion to avoid panicking if the atomic.Value holds an
 // unexpected type.
-func (h *Hub) loadSnapshot() map[*Client]struct{} {
-	snapshot, _ := h.clientsSnapshot.Load().(map[*Client]struct{})
-	if snapshot == nil {
+func (h *Hub) loadSnapshot() hubSnapshot {
+	snap, ok := h.clientsSnapshot.Load().(hubSnapshot)
+	if !ok {
 		return emptySnapshot
 	}
-	return snapshot
+	return snap
 }
 
 // updateClientsSnapshot creates a new snapshot of clients for lock-free reads.
@@ -297,11 +305,13 @@ func (h *Hub) loadSnapshot() map[*Client]struct{} {
 // needed for the copy. Concurrent readers (GetClient, etc.) only take RLock
 // which is compatible with concurrent map reads.
 func (h *Hub) updateClientsSnapshot() {
-	snapshot := make(map[*Client]struct{}, len(h.clients))
+	set := make(map[*Client]struct{}, len(h.clients))
+	slice := make([]*Client, 0, len(h.clients))
 	for client := range h.clients {
-		snapshot[client] = struct{}{}
+		set[client] = struct{}{}
+		slice = append(slice, client)
 	}
-	h.clientsSnapshot.Store(snapshot)
+	h.clientsSnapshot.Store(hubSnapshot{set: set, slice: slice})
 }
 
 // loadRoomSnapshot returns the current lock-free client slice for a room.
@@ -827,16 +837,16 @@ func (h *Hub) runDrainReaper() {
 			return
 		case <-ticker.C:
 			now := time.Now()
-			snapshot := h.loadSnapshot()
+			snap := h.loadSnapshot()
 
 			// Remove entries for clients no longer in the snapshot.
 			for c := range firstIdleAt {
-				if _, ok := snapshot[c]; !ok {
+				if _, ok := snap.set[c]; !ok {
 					delete(firstIdleAt, c)
 				}
 			}
 
-			for client := range snapshot {
+			for _, client := range snap.slice {
 				if len(client.send) == 0 {
 					// Send buffer empty — record first-seen-idle time.
 					if _, tracked := firstIdleAt[client]; !tracked {
@@ -1092,7 +1102,7 @@ func (h *Hub) trySendDropOldest(client *Client, item sendItem) bool {
 	// Evict+enqueue loop: retry up to 2 times to avoid losing both the
 	// evicted message and the new message when a fast-path writer races
 	// us between evict and enqueue.
-	for attempts := 0; attempts < 2; attempts++ {
+	for range 2 {
 		// Evict the oldest message.
 		select {
 		case dropped := <-client.send:
@@ -1194,12 +1204,7 @@ func isExcludedByID(clientID string, exceptIDs []string, excludeSet map[string]s
 		_, skip := excludeSet[clientID]
 		return skip
 	}
-	for _, id := range exceptIDs {
-		if clientID == id {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(exceptIDs, clientID)
 }
 
 // broadcastExceptByIDs sends to all local clients whose IDs are not in the
@@ -1210,9 +1215,9 @@ func (h *Hub) broadcastExceptByIDs(item sendItem, exceptIDs []string) {
 		return
 	}
 
-	snapshot := h.loadSnapshot()
+	snap := h.loadSnapshot()
 	excludeSet := buildExcludeSet(exceptIDs)
-	for client := range snapshot {
+	for _, client := range snap.slice {
 		if !isExcludedByID(client.ID, exceptIDs, excludeSet) {
 			h.trySend(client, item)
 		}
@@ -1281,7 +1286,11 @@ func (h *Hub) sendToClientLocal(clientID string, data []byte, msgType int) error
 // Clients returns all connected clients using the lock-free broadcast
 // snapshot, avoiding contention on h.mu.
 func (h *Hub) Clients() []*Client {
-	return snapshotToSlice(h.loadSnapshot())
+	snap := h.loadSnapshot()
+	// Return a copy so callers cannot mutate the shared snapshot slice.
+	out := make([]*Client, len(snap.slice))
+	copy(out, snap.slice)
+	return out
 }
 
 // ClientCount returns the number of connected clients.
@@ -1370,22 +1379,13 @@ func (h *Hub) parallelSend(clients []*Client, item sendItem) {
 	wg.Wait()
 }
 
-// snapshotToSlice converts a client snapshot map to a slice.
-func snapshotToSlice(snapshot map[*Client]struct{}) []*Client {
-	clients := make([]*Client, 0, len(snapshot))
-	for client := range snapshot {
-		clients = append(clients, client)
-	}
-	return clients
-}
-
 // broadcast is the internal dispatch used by Broadcast and BroadcastBinary.
 func (h *Hub) broadcast(item sendItem) {
-	snapshot := h.loadSnapshot()
+	snap := h.loadSnapshot()
 	if h.useParallel {
-		h.parallelSend(snapshotToSlice(snapshot), item)
+		h.parallelSend(snap.slice, item)
 	} else {
-		for client := range snapshot {
+		for _, client := range snap.slice {
 			h.trySend(client, item)
 		}
 	}
@@ -1418,10 +1418,10 @@ func (h *Hub) BroadcastBinary(data []byte) {
 // skipped but the adapter publish still fires so other nodes can deliver.
 // The returned error (if any) is the context error.
 func (h *Hub) BroadcastWithContext(ctx context.Context, data []byte) error {
-	snapshot := h.loadSnapshot()
+	snap := h.loadSnapshot()
 	item := sendItem{msgType: websocket.TextMessage, data: data}
 
-	ctxErr := h.sendWithContext(ctx, snapshotToSlice(snapshot), item)
+	ctxErr := h.sendWithContext(ctx, snap.slice, item)
 
 	// Always publish to the adapter so other nodes can deliver, even if the
 	// local broadcast was cut short by context cancellation.
@@ -1536,19 +1536,19 @@ func (h *Hub) BroadcastRawJSON(data []byte) {
 	h.Broadcast(data)
 }
 
-// broadcastExceptClients sends to all clients in snapshot not in exclude set,
+// broadcastExceptClients sends to all clients in the slice not in the exclude set,
 // using parallelSend when parallel mode is enabled.
-func (h *Hub) broadcastExceptClients(snapshot map[*Client]struct{}, item sendItem, exclude map[*Client]struct{}) {
+func (h *Hub) broadcastExceptClients(clients []*Client, item sendItem, exclude map[*Client]struct{}) {
 	if h.useParallel {
-		clients := make([]*Client, 0, len(snapshot))
-		for client := range snapshot {
+		filtered := make([]*Client, 0, len(clients))
+		for _, client := range clients {
 			if _, skip := exclude[client]; !skip {
-				clients = append(clients, client)
+				filtered = append(filtered, client)
 			}
 		}
-		h.parallelSend(clients, item)
+		h.parallelSend(filtered, item)
 	} else {
-		for client := range snapshot {
+		for _, client := range clients {
 			if _, skip := exclude[client]; !skip {
 				h.trySend(client, item)
 			}
@@ -1569,7 +1569,7 @@ func (h *Hub) BroadcastBinaryExcept(data []byte, except ...*Client) {
 }
 
 func (h *Hub) broadcastExceptWithType(data []byte, msgType int, except ...*Client) {
-	snapshot := h.loadSnapshot()
+	snap := h.loadSnapshot()
 	item := sendItem{msgType: msgType, data: data}
 
 	exclude := make(map[*Client]struct{}, len(except))
@@ -1577,7 +1577,7 @@ func (h *Hub) broadcastExceptWithType(data []byte, msgType int, except ...*Clien
 		exclude[c] = struct{}{}
 	}
 
-	h.broadcastExceptClients(snapshot, item, exclude)
+	h.broadcastExceptClients(snap.slice, item, exclude)
 
 	if len(except) > 0 {
 		ids := make([]string, len(except))

@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-04-03
+
+### Changed
+
+- **Lock-free hub broadcast snapshots** — hub-level `clientsSnapshot` now stores a `hubSnapshot` struct containing both a map (`set`) and a pre-built slice (`slice`), computed once in `updateClientsSnapshot()`; `parallelSend` and `sendWithContext` use the pre-built slice directly, eliminating the per-broadcast `snapshotToSlice` allocation; at 50K clients, parallel broadcast memory drops from 401 KB/op to ~0 B/op (−99.99%) with ~4–16% lower latency
+- `broadcastExceptClients` now accepts `[]*Client` instead of `map[*Client]struct{}`, iterating the pre-built slice in both parallel and sequential paths
+- `Clients()` returns a copy of the pre-built slice instead of converting from map
+- Removed `snapshotToSlice` helper (no longer needed)
+
 ## [1.2.1] - 2026-04-03
 
 ### Fixed
@@ -202,6 +211,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Examples: simple echo server, chat with rooms, JWT auth, metrics endpoint
 - Documentation: README, QUICKSTART, SCALABILITY, CONTRIBUTING
 
+[1.2.2]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.2.2
 [1.2.1]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.2.1
 [1.2.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.2.0
 [1.1.3]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.1.3

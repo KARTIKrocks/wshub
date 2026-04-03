@@ -1744,13 +1744,13 @@ func TestHubShutdownTimeout(t *testing.T) {
 
 func TestLoadSnapshot_Empty(t *testing.T) {
 	hub := NewHub()
-	// Before Run(), snapshot is initialized to empty map.
-	snapshot := hub.loadSnapshot()
-	if snapshot == nil {
-		t.Error("loadSnapshot should not return nil")
+	// Before Run(), snapshot is initialized to empty hubSnapshot.
+	snap := hub.loadSnapshot()
+	if snap.set == nil {
+		t.Error("loadSnapshot should not return nil set")
 	}
-	if len(snapshot) != 0 {
-		t.Errorf("expected empty snapshot, got %d", len(snapshot))
+	if len(snap.set) != 0 {
+		t.Errorf("expected empty snapshot set, got %d", len(snap.set))
 	}
 }
 
