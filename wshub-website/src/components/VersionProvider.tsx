@@ -16,11 +16,13 @@ function updateUrlVersion(version: string, latestVersion: string) {
   history.replaceState(null, '', url.toString());
 }
 
+const LATEST_VERSION = 'v1.2.1';
+
 export default function VersionProvider({ children }: { children: ReactNode }) {
   const [releases, setReleases] = useState<Release[]>([]);
-  const [selectedVersion, setSelectedVersionState] = useState(() => getUrlVersion() ?? 'v1.2.0');
+  const [selectedVersion, setSelectedVersionState] = useState(() => getUrlVersion() ?? LATEST_VERSION);
   const [loading, setLoading] = useState(true);
-  const [latestVersion, setLatestVersion] = useState('v1.2.0');
+  const [latestVersion, setLatestVersion] = useState(LATEST_VERSION);
 
   useEffect(() => {
     const controller = new AbortController();
