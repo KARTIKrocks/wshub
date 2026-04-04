@@ -17,6 +17,7 @@ const features: Feature[] = [
   { title: 'Thread Safe', desc: 'All methods are safe for concurrent use' },
   { title: 'Zero-Alloc JSON', desc: 'Pre-serialized JSON API skips marshaling — 0 allocs, ~35 ns per send', minVersion: 'v1.1.3' },
   { title: 'Graceful Drain', desc: 'Zero-downtime deploys with connection draining, idle reaping, and hub state inspection', minVersion: 'v1.2.0' },
+  { title: 'Write Coalescing', desc: 'Batch queued text messages into a single WebSocket frame, reducing syscalls under high throughput', minVersion: 'v1.3.0' },
 ];
 
 export default function Hero() {

@@ -1,7 +1,10 @@
 import CodeBlock from '../components/CodeBlock';
 import ModuleSection from '../components/ModuleSection';
+import { useVersion } from '../hooks/useVersion';
 
 export default function ConfigDocs() {
+  const { minVersion } = useVersion();
+  const v130 = minVersion('v1.3.0');
   return (
     <ModuleSection
       id="config"
@@ -13,6 +16,7 @@ export default function ConfigDocs() {
         'Builder pattern for fluent configuration',
         'Configurable buffer sizes, timeouts, and message limits',
         'Per-message compression support',
+        ...(v130 ? ['Opt-in write coalescing for high-throughput text broadcasts'] : []),
         'Pluggable origin validation',
       ]}
     >
@@ -35,6 +39,7 @@ export default function ConfigDocs() {
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">MaxMessageSize</td><td className="py-2 text-text-muted">512 KB</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">SendChannelSize</td><td className="py-2 text-text-muted">256</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">EnableCompression</td><td className="py-2 text-text-muted">false</td></tr>
+            {v130 && <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">CoalesceWrites</td><td className="py-2 text-text-muted">false</td></tr>}
           </tbody>
         </table>
       </div>
@@ -60,11 +65,24 @@ hub := wshub.NewHub(
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithBufferSizes(read, write)</td><td className="py-2 text-text-muted">Set read and write buffer sizes</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithMaxMessageSize(size)</td><td className="py-2 text-text-muted">Set maximum message size in bytes</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithCompression(enabled)</td><td className="py-2 text-text-muted">Enable per-message compression</td></tr>
+            {v130 && <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithCoalesceWrites(enabled)</td><td className="py-2 text-text-muted">Batch queued text messages into a single WebSocket frame (separated by \n), reducing syscalls under high throughput</td></tr>}
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithCheckOrigin(fn)</td><td className="py-2 text-text-muted">Set origin validation function</td></tr>
           </tbody>
         </table>
       </div>
-      <CodeBlock code={`config := wshub.DefaultConfig().
+      {v130 ? (
+        <CodeBlock code={`config := wshub.DefaultConfig().
+    WithBufferSizes(4096, 4096).
+    WithMaxMessageSize(1024 * 1024). // 1 MB
+    WithCompression(true).
+    WithCoalesceWrites(true). // batch text messages into single frames
+    WithCheckOrigin(wshub.AllowOrigins("https://example.com"))
+
+hub := wshub.NewHub(
+    wshub.WithConfig(config),
+)`} />
+      ) : (
+        <CodeBlock code={`config := wshub.DefaultConfig().
     WithBufferSizes(4096, 4096).
     WithMaxMessageSize(1024 * 1024). // 1 MB
     WithCompression(true).
@@ -73,6 +91,7 @@ hub := wshub.NewHub(
 hub := wshub.NewHub(
     wshub.WithConfig(config),
 )`} />
+      )}
 
       {/* ── Origin Checking ── */}
       <h3 id="config-origins" className="text-lg font-semibold text-text-heading mt-8 mb-2">Origin Checking</h3>

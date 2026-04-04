@@ -56,6 +56,7 @@ const sections: SectionItem[] = [
     children: [
       { id: 'messages-type', label: 'Message Type' },
       { id: 'messages-handler', label: 'Message Handler' },
+      { id: 'messages-raw-json', label: 'Pre-serialized JSON', minVersion: 'v1.1.3' },
     ],
   },
   {
