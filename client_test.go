@@ -830,3 +830,152 @@ func TestGetMetadata_NotFound(t *testing.T) {
 		t.Errorf("expected nil value, got %v", val)
 	}
 }
+
+// setupCoalesceTest creates a hub with write coalescing enabled and returns
+// a dial function. Callers can pass additional options.
+func setupCoalesceTest(t *testing.T, opts ...Option) (*Hub, func() *websocket.Conn) {
+	t.Helper()
+	allOpts := append([]Option{WithConfig(DefaultConfig().WithCoalesceWrites(true))}, opts...)
+	hub := NewHub(allOpts...)
+	go hub.Run()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		hub.Shutdown(ctx)
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hub.UpgradeConnection(w, r)
+	}))
+	t.Cleanup(server.Close)
+
+	dialer := websocket.Dialer{}
+	dial := func() *websocket.Conn {
+		t.Helper()
+		url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
+		conn, _, err := dialer.Dial(url, nil)
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		t.Cleanup(func() { conn.Close() })
+		return conn
+	}
+	return hub, dial
+}
+
+func TestCoalesceWritesSingleMessage(t *testing.T) {
+	hub, dial := setupCoalesceTest(t)
+	conn := dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+	if err := client.Send([]byte("hello")); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	conn.SetReadDeadline(time.Now().Add(time.Second))
+	_, msg, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(msg) != "hello" {
+		t.Errorf("got %q, want %q", msg, "hello")
+	}
+}
+
+func TestCoalesceWritesBatchText(t *testing.T) {
+	hub, dial := setupCoalesceTest(t)
+	conn := dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+
+	// Send 5 messages rapidly so they queue up.
+	for i := range 5 {
+		if err := client.SendText(strings.Repeat("m", i+1)); err != nil {
+			t.Fatalf("Send %d: %v", i, err)
+		}
+	}
+
+	// Collect all received data, splitting coalesced frames on \n.
+	conn.SetReadDeadline(time.Now().Add(time.Second))
+	var all []string
+	for len(all) < 5 {
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("read (have %d messages): %v", len(all), err)
+		}
+		parts := strings.Split(string(msg), "\n")
+		all = append(all, parts...)
+	}
+
+	want := []string{"m", "mm", "mmm", "mmmm", "mmmmm"}
+	if len(all) != len(want) {
+		t.Fatalf("got %d messages, want %d: %v", len(all), len(want), all)
+	}
+	for i, w := range want {
+		if all[i] != w {
+			t.Errorf("message[%d] = %q, want %q", i, all[i], w)
+		}
+	}
+}
+
+func TestCoalesceWritesBinaryNotCoalesced(t *testing.T) {
+	hub, dial := setupCoalesceTest(t)
+	conn := dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+
+	// Send 3 binary messages.
+	for i := range 3 {
+		if err := client.SendBinary([]byte{byte(i)}); err != nil {
+			t.Fatalf("SendBinary %d: %v", i, err)
+		}
+	}
+
+	// Each binary message must arrive as a separate frame.
+	conn.SetReadDeadline(time.Now().Add(time.Second))
+	for i := range 3 {
+		msgType, msg, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("read %d: %v", i, err)
+		}
+		if msgType != websocket.BinaryMessage {
+			t.Errorf("frame %d: type = %d, want BinaryMessage", i, msgType)
+		}
+		if len(msg) != 1 || msg[0] != byte(i) {
+			t.Errorf("frame %d: data = %v, want [%d]", i, msg, i)
+		}
+	}
+}
+
+func TestCoalesceWritesDisabledByDefault(t *testing.T) {
+	hub, dial := setupClientTest(t) // default config, no coalescing
+	conn := dial()
+	time.Sleep(50 * time.Millisecond)
+
+	client := hub.Clients()[0]
+
+	for i := range 3 {
+		if err := client.SendText(strings.Repeat("x", i+1)); err != nil {
+			t.Fatalf("Send %d: %v", i, err)
+		}
+	}
+
+	// Each message must arrive as its own frame (no \n joining).
+	conn.SetReadDeadline(time.Now().Add(time.Second))
+	want := []string{"x", "xx", "xxx"}
+	for i, w := range want {
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("read %d: %v", i, err)
+		}
+		if strings.Contains(string(msg), "\n") {
+			t.Errorf("frame %d contains newline — coalescing should be off", i)
+		}
+		if string(msg) != w {
+			t.Errorf("frame %d = %q, want %q", i, msg, w)
+		}
+	}
+}

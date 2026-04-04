@@ -46,6 +46,12 @@ type Config struct {
 	// EnableCompression enables per-message compression (default: false).
 	EnableCompression bool
 
+	// CoalesceWrites batches queued text messages into a single WebSocket
+	// frame separated by newline bytes (\n), reducing syscalls under high
+	// throughput. Binary messages are always sent as individual frames.
+	// Receivers must split coalesced frames on \n. Default: false.
+	CoalesceWrites bool
+
 	// CheckOrigin is a function to validate the request origin.
 	CheckOrigin func(r *http.Request) bool
 
@@ -150,6 +156,12 @@ func (c Config) WithSendChannelSize(size int) Config {
 // WithCompression returns a new config with compression enabled/disabled.
 func (c Config) WithCompression(enabled bool) Config {
 	c.EnableCompression = enabled
+	return c
+}
+
+// WithCoalesceWrites returns a new config with write coalescing enabled/disabled.
+func (c Config) WithCoalesceWrites(enabled bool) Config {
+	c.CoalesceWrites = enabled
 	return c
 }
 

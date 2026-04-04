@@ -548,6 +548,92 @@ func (c *Client) drainQueued() bool {
 	return true
 }
 
+// drainQueuedCoalesced writes the first item and any queued items,
+// coalescing consecutive text messages into a single WebSocket frame
+// separated by newline bytes. Non-text messages are written individually.
+// Returns false if the send channel was closed or a write error occurred.
+func (c *Client) drainQueuedCoalesced(first sendItem) bool {
+	n := len(c.send)
+
+	// Fast path: nothing queued or first message is non-text.
+	if n == 0 || first.msgType != websocket.TextMessage {
+		if err := c.conn.WriteMessage(first.msgType, first.data); err != nil {
+			c.hub.metrics.IncrementErrors("write_error")
+			return false
+		}
+		if n == 0 {
+			return true
+		}
+		return c.drainQueued()
+	}
+
+	return c.writeCoalescedBatch(first, n)
+}
+
+// writeCoalescedBatch opens a single NextWriter and coalesces the first text
+// message with up to n queued text messages into one frame. A non-text item
+// in the queue flushes the current frame and is written individually.
+func (c *Client) writeCoalescedBatch(first sendItem, n int) bool {
+	if err := c.conn.SetWriteDeadline(time.Now().Add(c.config.WriteWait)); err != nil {
+		c.hub.metrics.IncrementErrors("write_deadline_error")
+		return false
+	}
+
+	w, err := c.conn.NextWriter(websocket.TextMessage)
+	if err != nil {
+		c.hub.metrics.IncrementErrors("write_error")
+		return false
+	}
+
+	if _, err := w.Write(first.data); err != nil {
+		c.hub.metrics.IncrementErrors("write_error")
+		return false
+	}
+
+	for range n {
+		select {
+		case queued, ok := <-c.send:
+			if !ok {
+				_ = w.Close()
+				return false
+			}
+			if queued.msgType == websocket.TextMessage {
+				if _, err := w.Write([]byte{'\n'}); err != nil {
+					c.hub.metrics.IncrementErrors("write_error")
+					return false
+				}
+				if _, err := w.Write(queued.data); err != nil {
+					c.hub.metrics.IncrementErrors("write_error")
+					return false
+				}
+			} else {
+				// Type changed: flush coalesced text, write non-text individually.
+				if err := w.Close(); err != nil {
+					c.hub.metrics.IncrementErrors("write_error")
+					return false
+				}
+				if err := c.conn.WriteMessage(queued.msgType, queued.data); err != nil {
+					c.hub.metrics.IncrementErrors("write_error")
+					return false
+				}
+				return true
+			}
+		default:
+			if err := w.Close(); err != nil {
+				c.hub.metrics.IncrementErrors("write_error")
+				return false
+			}
+			return true
+		}
+	}
+
+	if err := w.Close(); err != nil {
+		c.hub.metrics.IncrementErrors("write_error")
+		return false
+	}
+	return true
+}
+
 // writePump pumps messages from the hub to the WebSocket connection.
 func (c *Client) writePump(ctx context.Context) {
 	ticker := time.NewTicker(c.config.PingPeriod)
@@ -575,12 +661,18 @@ func (c *Client) writePump(ctx context.Context) {
 				c.writeCloseFrame()
 				return
 			}
-			if err := c.conn.WriteMessage(item.msgType, item.data); err != nil {
-				c.hub.metrics.IncrementErrors("write_error")
-				return
-			}
-			if !c.drainQueued() {
-				return
+			if c.config.CoalesceWrites {
+				if !c.drainQueuedCoalesced(item) {
+					return
+				}
+			} else {
+				if err := c.conn.WriteMessage(item.msgType, item.data); err != nil {
+					c.hub.metrics.IncrementErrors("write_error")
+					return
+				}
+				if !c.drainQueued() {
+					return
+				}
 			}
 
 		case <-ticker.C:
