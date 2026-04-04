@@ -1324,6 +1324,68 @@ func TestIsExcludedByID_EmptyInputs(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// buildClientExcludeSet / isExcludedClient
+// ---------------------------------------------------------------------------
+
+func TestBuildClientExcludeSet_SmallList(t *testing.T) {
+	// ≤4 clients should return nil (callers use linear scan).
+	clients := make([]*Client, 4)
+	for i := range clients {
+		clients[i] = &Client{}
+	}
+	if set := buildClientExcludeSet(clients); set != nil {
+		t.Errorf("expected nil for ≤4 clients, got %v", set)
+	}
+}
+
+func TestBuildClientExcludeSet_LargeList(t *testing.T) {
+	clients := make([]*Client, 5)
+	for i := range clients {
+		clients[i] = &Client{}
+	}
+	set := buildClientExcludeSet(clients)
+	if set == nil {
+		t.Fatal("expected non-nil set for >4 clients")
+	}
+	if len(set) != 5 {
+		t.Errorf("set length = %d, want 5", len(set))
+	}
+	for _, c := range clients {
+		if _, ok := set[c]; !ok {
+			t.Error("client not in set")
+		}
+	}
+}
+
+func TestIsExcludedClient_WithSet(t *testing.T) {
+	a, b, c := &Client{}, &Client{}, &Client{}
+	set := map[*Client]struct{}{a: {}, b: {}}
+	if !isExcludedClient(a, nil, set) {
+		t.Error("client a should be excluded (in set)")
+	}
+	if isExcludedClient(c, nil, set) {
+		t.Error("client c should not be excluded (not in set)")
+	}
+}
+
+func TestIsExcludedClient_LinearScan(t *testing.T) {
+	a, b, c := &Client{}, &Client{}, &Client{}
+	except := []*Client{a, b}
+	if !isExcludedClient(b, except, nil) {
+		t.Error("client b should be excluded (linear scan)")
+	}
+	if isExcludedClient(c, except, nil) {
+		t.Error("client c should not be excluded")
+	}
+}
+
+func TestIsExcludedClient_EmptyInputs(t *testing.T) {
+	if isExcludedClient(&Client{}, nil, nil) {
+		t.Error("should return false for nil set and nil clients")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // sendWithContext / trySendWithContext / parallelSend
 // ---------------------------------------------------------------------------
 
@@ -1810,10 +1872,21 @@ func TestHandleRegister_PerUserLimitReject(t *testing.T) {
 	}
 
 	// Second connection with same user ID should be rejected by handleRegister.
+	// The upgrade succeeds (per-user check is post-upgrade), so Dial returns
+	// a valid connection. The server then sends a close frame with code 1013.
 	dial2 := testDialerWithOpts(t, hub, WithUserID("limited-user"))
-	dial2() // This may fail silently — the important thing is the limit is enforced.
-	time.Sleep(50 * time.Millisecond)
+	conn := dial2()
 
+	_, _, err := conn.ReadMessage()
+	var closeErr *websocket.CloseError
+	if !errors.As(err, &closeErr) {
+		t.Fatalf("expected CloseError, got %v", err)
+	}
+	if closeErr.Code != websocket.CloseTryAgainLater {
+		t.Errorf("close code = %d, want %d (CloseTryAgainLater)", closeErr.Code, websocket.CloseTryAgainLater)
+	}
+
+	time.Sleep(50 * time.Millisecond)
 	if hub.ClientCount() > 1 {
 		t.Errorf("expected ≤1 client after per-user limit, got %d", hub.ClientCount())
 	}

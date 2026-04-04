@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.3] - 2026-04-04
+
+### Changed
+
+- **Zero-allocation exclude set for small client lists** — `broadcastExceptWithType` and `broadcastToRoomExceptWithType` no longer allocate a `map[*Client]struct{}` when excluding ≤4 clients; a linear pointer scan via `slices.Contains` is used instead (matches the existing `buildExcludeSet` pattern for ID-based exclusions, threshold 4); for the dominant single-sender echo-suppression case this eliminates a heap allocation per broadcast call
+- `broadcastExceptClients` signature updated to accept `except []*Client` + `excludeSet map[*Client]struct{}` (mirrors `isExcludedByID` calling convention); inline exclusion loop in `broadcastToRoomExceptWithType` replaced with a single `broadcastExceptClients` call, removing duplicated parallel/sequential branching
+- Added `buildClientExcludeSet` and `isExcludedClient` helpers (counterparts to `buildExcludeSet`/`isExcludedByID`)
+
+### Fixed
+
+- **Proper WebSocket close frame on post-upgrade connection rejection** — when `UpgradeConnection` rejects a connection after the WebSocket upgrade (per-user limit, hub shutdown during registration), it now sends a close frame before closing; connection-limit rejections use code **1013 Try Again Later**, hub-shutdown closures use code **1001 Going Away**; previously clients saw an abrupt TCP close with no WebSocket close frame
+
 ## [1.2.2] - 2026-04-03
 
 ### Changed
@@ -211,6 +223,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Examples: simple echo server, chat with rooms, JWT auth, metrics endpoint
 - Documentation: README, QUICKSTART, SCALABILITY, CONTRIBUTING
 
+[1.2.3]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.2.3
 [1.2.2]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.2.2
 [1.2.1]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.2.1
 [1.2.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.2.0

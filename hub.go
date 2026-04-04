@@ -986,13 +986,21 @@ func (h *Hub) UpgradeConnection(w http.ResponseWriter, r *http.Request, opts ...
 		opt(client)
 	}
 
+	// writeCloseAndClose sends a WebSocket close frame with the given code and
+	// reason, then closes the underlying connection. Used in the pre-registration
+	// path where no Client exists yet.
+	writeCloseAndClose := func(code int, reason string) {
+		_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(code, reason))
+		_ = conn.Close()
+	}
+
 	// Register the client via the Run goroutine which checks limits
 	// atomically, eliminating the TOCTOU race.
 	result := make(chan registrationResult, 1)
 	select {
 	case h.register <- registrationRequest{client: client, result: result}:
 	case <-h.ctx.Done():
-		_ = conn.Close()
+		writeCloseAndClose(websocket.CloseGoingAway, "server shutting down")
 		return nil, h.ctx.Err()
 	}
 
@@ -1000,13 +1008,13 @@ func (h *Hub) UpgradeConnection(w http.ResponseWriter, r *http.Request, opts ...
 	select {
 	case res = <-result:
 	case <-h.ctx.Done():
-		_ = conn.Close()
+		writeCloseAndClose(websocket.CloseGoingAway, "server shutting down")
 		return nil, h.ctx.Err()
 	}
 	if res.err != nil {
 		h.logger.Warn("Connection limit reached")
 		h.metrics.IncrementErrors("connection_limit")
-		_ = conn.Close()
+		writeCloseAndClose(websocket.CloseTryAgainLater, res.err.Error())
 		return nil, fmt.Errorf("remote %s: %w", r.RemoteAddr, res.err)
 	}
 
@@ -1205,6 +1213,31 @@ func isExcludedByID(clientID string, exceptIDs []string, excludeSet map[string]s
 		return skip
 	}
 	return slices.Contains(exceptIDs, clientID)
+}
+
+// buildClientExcludeSet builds a set from except for O(1) lookups when the
+// list is large enough to justify the allocation. Returns nil for small
+// lists (≤4) — callers should use isExcludedClient which falls back to a
+// linear scan.
+func buildClientExcludeSet(except []*Client) map[*Client]struct{} {
+	if len(except) <= 4 {
+		return nil
+	}
+	exclude := make(map[*Client]struct{}, len(except))
+	for _, c := range except {
+		exclude[c] = struct{}{}
+	}
+	return exclude
+}
+
+// isExcludedClient reports whether client is in the exclusion list. When
+// excludeSet is nil it falls back to a linear scan of except.
+func isExcludedClient(client *Client, except []*Client, excludeSet map[*Client]struct{}) bool {
+	if excludeSet != nil {
+		_, skip := excludeSet[client]
+		return skip
+	}
+	return slices.Contains(except, client)
 }
 
 // broadcastExceptByIDs sends to all local clients whose IDs are not in the
@@ -1536,20 +1569,21 @@ func (h *Hub) BroadcastRawJSON(data []byte) {
 	h.Broadcast(data)
 }
 
-// broadcastExceptClients sends to all clients in the slice not in the exclude set,
-// using parallelSend when parallel mode is enabled.
-func (h *Hub) broadcastExceptClients(clients []*Client, item sendItem, exclude map[*Client]struct{}) {
+// broadcastExceptClients sends to all clients in the slice not in the exclude list,
+// using parallelSend when parallel mode is enabled. excludeSet may be nil for
+// small lists — isExcludedClient handles the fallback to linear scan.
+func (h *Hub) broadcastExceptClients(clients []*Client, item sendItem, except []*Client, excludeSet map[*Client]struct{}) {
 	if h.useParallel {
 		filtered := make([]*Client, 0, len(clients))
 		for _, client := range clients {
-			if _, skip := exclude[client]; !skip {
+			if !isExcludedClient(client, except, excludeSet) {
 				filtered = append(filtered, client)
 			}
 		}
 		h.parallelSend(filtered, item)
 	} else {
 		for _, client := range clients {
-			if _, skip := exclude[client]; !skip {
+			if !isExcludedClient(client, except, excludeSet) {
 				h.trySend(client, item)
 			}
 		}
@@ -1572,12 +1606,8 @@ func (h *Hub) broadcastExceptWithType(data []byte, msgType int, except ...*Clien
 	snap := h.loadSnapshot()
 	item := sendItem{msgType: msgType, data: data}
 
-	exclude := make(map[*Client]struct{}, len(except))
-	for _, c := range except {
-		exclude[c] = struct{}{}
-	}
-
-	h.broadcastExceptClients(snap.slice, item, exclude)
+	excludeSet := buildClientExcludeSet(except)
+	h.broadcastExceptClients(snap.slice, item, except, excludeSet)
 
 	if len(except) > 0 {
 		ids := make([]string, len(except))
@@ -1971,29 +2001,9 @@ func (h *Hub) broadcastToRoomExceptWithType(roomName string, data []byte, msgTyp
 	h.roomsMu.RUnlock()
 
 	if ok {
-		exclude := make(map[*Client]struct{}, len(except))
-		for _, c := range except {
-			exclude[c] = struct{}{}
-		}
-
 		snapshot := loadRoomSnapshot(room)
 		item := sendItem{msgType: msgType, data: data}
-		if h.useParallel {
-			// Filter excluded clients before parallel send.
-			clients := make([]*Client, 0, len(snapshot))
-			for _, client := range snapshot {
-				if _, skip := exclude[client]; !skip {
-					clients = append(clients, client)
-				}
-			}
-			h.parallelSend(clients, item)
-		} else {
-			for _, client := range snapshot {
-				if _, skip := exclude[client]; !skip {
-					h.trySend(client, item)
-				}
-			}
-		}
+		h.broadcastExceptClients(snapshot, item, except, buildClientExcludeSet(except))
 	}
 
 	// Publish to adapter — room may have members on other nodes.
