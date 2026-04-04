@@ -84,4 +84,15 @@
 //
 // In both cases the [Hooks.OnSendDropped] callback fires so the application
 // can log, disconnect slow clients, or take other corrective action.
+//
+// # Write Coalescing
+//
+// When [Config.CoalesceWrites] is true, the write pump batches queued text
+// messages into a single WebSocket frame separated by newline bytes (\n).
+// This reduces the number of syscalls under high throughput. Binary messages
+// are always sent as individual frames. Receivers must split coalesced
+// frames on \n to recover individual messages.
+//
+//	cfg := wshub.DefaultConfig().WithCoalesceWrites(true)
+//	hub := wshub.NewHub(wshub.WithConfig(cfg))
 package wshub

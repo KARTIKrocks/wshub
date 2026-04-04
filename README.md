@@ -24,6 +24,7 @@ A production-ready, scalable WebSocket package for Go with support for rooms, br
 - **Configurable**: Extensive configuration with builder pattern
 - **Limits & Rate Limiting**: Control connections, rooms, and message rates
 - **Backpressure Control**: Configurable drop policies with notification hooks
+- **Write Coalescing**: Opt-in batching of text messages into single frames for reduced syscalls
 - **Global Counts**: Cluster-wide client and room counts via presence gossip
 - **Zero Business Logic**: Pure infrastructure, bring your own logic
 
@@ -564,6 +565,19 @@ hub := wshub.NewHub(
 | ------------ | ---------------------------- | ------------------------------------------------ |
 | `DropNewest` | Discards the new message     | Default, safe                                    |
 | `DropOldest` | Evicts oldest queued message | Real-time data (dashboards, tickers, game state) |
+
+## Write Coalescing
+
+When throughput is high and messages queue up, enable write coalescing to batch multiple text messages into a single WebSocket frame separated by newlines (`\n`). This reduces syscalls at the cost of receivers needing to split frames:
+
+```go
+cfg := wshub.DefaultConfig().WithCoalesceWrites(true)
+hub := wshub.NewHub(wshub.WithConfig(cfg))
+```
+
+- Only **text messages** are coalesced; binary messages are always sent as individual frames
+- Receivers must split coalesced frames on `\n` to recover individual messages
+- When disabled (default), every message is its own frame — no behavior change
 
 ## Error Handling
 

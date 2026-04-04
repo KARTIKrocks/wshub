@@ -35,6 +35,9 @@ func TestDefaultConfig(t *testing.T) {
 	if c.EnableCompression != false {
 		t.Error("EnableCompression should be false")
 	}
+	if c.CoalesceWrites != false {
+		t.Error("CoalesceWrites should be false")
+	}
 	if c.CheckOrigin == nil {
 		t.Error("CheckOrigin should not be nil")
 	}
@@ -65,6 +68,7 @@ func TestConfigBuilderMethods(t *testing.T) {
 		WithMaxMessageSize(1024*1024).
 		WithSendChannelSize(512).
 		WithCompression(true).
+		WithCoalesceWrites(true).
 		WithSubprotocols("chat", "binary")
 
 	if c.ReadBufferSize != 2048 {
@@ -90,6 +94,9 @@ func TestConfigBuilderMethods(t *testing.T) {
 	}
 	if !c.EnableCompression {
 		t.Error("EnableCompression should be true")
+	}
+	if !c.CoalesceWrites {
+		t.Error("CoalesceWrites should be true")
 	}
 	if len(c.Subprotocols) != 2 || c.Subprotocols[0] != "chat" {
 		t.Errorf("Subprotocols = %v, want [chat binary]", c.Subprotocols)
