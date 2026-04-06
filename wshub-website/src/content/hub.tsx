@@ -8,6 +8,7 @@ export default function HubDocs() {
   const v112 = minVersion('v1.1.2');
   const v113 = minVersion('v1.1.3');
   const v120 = minVersion('v1.2.0');
+  const v140 = minVersion('v1.4.0');
 
   return (
     <ModuleSection
@@ -26,6 +27,7 @@ export default function HubDocs() {
           'Configurable backpressure with drop policies',
         ] : []),
         'Graceful shutdown with context support',
+        ...(v140 ? ['Built-in health and readiness handlers for Kubernetes probes'] : []),
       ]}
     >
       {/* ── Creating a Hub ── */}
@@ -230,6 +232,51 @@ hub := wshub.NewHub(
         },
     }),
 )`} />
+      </>}
+
+      {/* ── Health & Readiness (v1.4.0+) ── */}
+      {v140 && <>
+        <h3 id="hub-health" className="text-lg font-semibold text-text-heading mt-8 mb-2">Health &amp; Readiness</h3>
+        <p className="text-text-muted mb-3">
+          Drop-in HTTP handlers for Kubernetes <code className="text-accent">/healthz</code> and <code className="text-accent">/readyz</code> probes,
+          plus low-level accessors for building custom health logic.
+        </p>
+        <div className="overflow-x-auto mb-4">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-left">
+                <th className="py-2 pr-4 text-text-heading font-semibold">Method</th>
+                <th className="py-2 text-text-heading font-semibold">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">HealthHandler()</td><td className="py-2 text-text-muted">Returns an http.HandlerFunc for /healthz — 200 when alive, 503 otherwise</td></tr>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">ReadyHandler()</td><td className="py-2 text-text-muted">Returns an http.HandlerFunc for /readyz — 200 when alive and StateRunning, 503 otherwise</td></tr>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">Health()</td><td className="py-2 text-text-muted">Returns a HealthStatus snapshot (all reads are lock-free atomic loads)</td></tr>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">Alive()</td><td className="py-2 text-text-muted">True while the Run() goroutine is executing</td></tr>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">Ready()</td><td className="py-2 text-text-muted">True when alive and in StateRunning (accepting connections)</td></tr>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">Uptime()</td><td className="py-2 text-text-muted">Elapsed time since Run() started; zero before start or after exit</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="text-text-muted mb-3">
+          Both handlers respond with a JSON body containing <code className="text-accent">alive</code>, <code className="text-accent">ready</code>, <code className="text-accent">state</code>, <code className="text-accent">uptime_ns</code>, and <code className="text-accent">clients</code>.
+        </p>
+        <CodeBlock code={`// Register Kubernetes probes
+http.HandleFunc("/healthz", hub.HealthHandler()) // liveness
+http.HandleFunc("/readyz",  hub.ReadyHandler())  // readiness
+
+// Or use the snapshot for custom logic
+h := hub.Health()
+fmt.Printf("state=%s uptime=%s clients=%d\\n", h.State, h.Uptime, h.Clients)
+
+// Low-level accessors
+if !hub.Alive() {
+    log.Println("Run() has not started or has exited")
+}
+if !hub.Ready() {
+    log.Println("Hub is draining or stopped — not accepting connections")
+}`} />
       </>}
 
       {/* ── Graceful Drain (v1.2.0+) ── */}

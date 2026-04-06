@@ -35,6 +35,7 @@ const sections: SectionItem[] = [
       { id: 'hub-client-lookup', label: 'Client Lookup' },
       { id: 'hub-upgrade', label: 'Upgrade Options', minVersion: 'v1.1.0' },
       { id: 'hub-drop-policy', label: 'Drop Policy', minVersion: 'v1.1.0' },
+      { id: 'hub-health', label: 'Health & Readiness', minVersion: 'v1.4.0' },
       { id: 'hub-drain', label: 'Graceful Drain', minVersion: 'v1.2.0' },
       { id: 'hub-shutdown', label: 'Graceful Shutdown' },
     ],

@@ -6,6 +6,7 @@ export default function ErrorsDocs() {
   const { minVersion } = useVersion();
   const v110 = minVersion('v1.1.0');
   const v120 = minVersion('v1.2.0');
+  const v140 = minVersion('v1.4.0');
 
   return (
     <ModuleSection
@@ -56,6 +57,7 @@ export default function ErrorsDocs() {
             <tbody>
               <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">ErrHubDraining</td><td className="py-2 text-text-muted">UpgradeConnection called while the hub is draining (HTTP 503)</td></tr>
               <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">ErrHubStopped</td><td className="py-2 text-text-muted">UpgradeConnection called after the hub has been shut down (HTTP 503)</td></tr>
+              {v140 && <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">ErrHubNotStarted</td><td className="py-2 text-text-muted">UpgradeConnection called before Run() has been started (HTTP 503)</td></tr>}
             </tbody>
           </table>
         </div>
