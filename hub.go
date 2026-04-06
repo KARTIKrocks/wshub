@@ -149,6 +149,13 @@ type Hub struct {
 	// Hub lifecycle state — lock-free reads from UpgradeConnection hot path.
 	state atomic.Int32 // HubState stored as int32
 
+	// alive is 1 while the Run() goroutine is executing, 0 otherwise.
+	// Set at the top of Run(), cleared when Run() exits via defer.
+	alive atomic.Int32
+
+	// startedAt records when Run() began executing. Zero value until Run() starts.
+	startedAt atomic.Value // time.Time
+
 	// Context for shutdown
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -454,6 +461,10 @@ func (h *Hub) Run() {
 	// wg.Add(1) is done in NewHub so Shutdown can safely call wg.Wait()
 	// even before Run starts.
 	defer h.wg.Done()
+
+	h.alive.Store(1)
+	defer h.alive.Store(0)
+	h.startedAt.Store(time.Now())
 
 	// Start worker pool for parallel broadcasts if enabled.
 	if h.useParallel {
@@ -939,6 +950,13 @@ func (h *Hub) HandleHTTP() http.HandlerFunc {
 
 // UpgradeConnection upgrades an HTTP connection to WebSocket.
 func (h *Hub) UpgradeConnection(w http.ResponseWriter, r *http.Request, opts ...UpgradeOption) (*Client, error) {
+	// Reject connections when Run() has not been called yet.
+	if !h.Alive() {
+		h.metrics.IncrementErrors("connection_rejected_not_ready")
+		http.Error(w, "Service not ready", http.StatusServiceUnavailable)
+		return nil, fmt.Errorf("remote %s: %w", r.RemoteAddr, ErrHubNotStarted)
+	}
+
 	// Reject connections when the hub is not running (draining or stopped).
 	// Checked before BeforeConnect hook to avoid unnecessary work.
 	if s := h.State(); s != StateRunning {

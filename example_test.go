@@ -235,3 +235,45 @@ func ExampleWithHookTimeout() {
 	// Output:
 	// hub created: 0
 }
+
+func ExampleHub_HealthHandler() {
+	hub := wshub.NewHub()
+
+	handler := hub.HealthHandler()
+	fmt.Println("handler is nil:", handler == nil)
+	// Output:
+	// handler is nil: false
+}
+
+func ExampleHub_ReadyHandler() {
+	hub := wshub.NewHub()
+
+	handler := hub.ReadyHandler()
+	fmt.Println("handler is nil:", handler == nil)
+	// Output:
+	// handler is nil: false
+}
+
+func ExampleHub_Health() {
+	hub := wshub.NewHub()
+	hs := hub.Health()
+	fmt.Println("alive:", hs.Alive)
+	fmt.Println("ready:", hs.Ready)
+	// Output:
+	// alive: false
+	// ready: false
+}
+
+func ExampleHub_Alive() {
+	hub := wshub.NewHub()
+	fmt.Println("alive before Run:", hub.Alive())
+	// Output:
+	// alive before Run: false
+}
+
+func ExampleHub_Ready() {
+	hub := wshub.NewHub()
+	fmt.Println("ready before Run:", hub.Ready())
+	// Output:
+	// ready before Run: false
+}
