@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-04-06
+
+### Added
+
+- **Health and readiness probe helpers** — `Hub.HealthHandler()` and `Hub.ReadyHandler()` return drop-in `http.HandlerFunc` values for Kubernetes `/healthz` and `/readyz` endpoints; both respond with a JSON body (`alive`, `ready`, `state`, `uptime_ns`, `clients`) and set the HTTP status code automatically (200 or 503)
+- `Hub.Alive() bool` — true only while the `Run()` goroutine is executing; single atomic load, safe on hot paths
+- `Hub.Ready() bool` — true when the hub is alive and in `StateRunning` (accepting connections)
+- `Hub.Uptime() time.Duration` — elapsed time since `Run()` started; returns zero before `Run()` is called or after it exits
+- `Hub.Health() HealthStatus` — point-in-time snapshot struct with `Alive`, `Ready`, `State` (string), `Uptime`, and `Clients`; all reads are lock-free atomic loads
+- `ErrHubNotStarted` sentinel error returned by `UpgradeConnection` when the hub has not yet been started
+
+### Fixed
+
+- **`UpgradeConnection` accepted connections before `Run()` was called** — `HubState` uses `iota` so the zero value of `state` equals `StateRunning`, causing a freshly created hub to appear running before `Run()` ever executed; `UpgradeConnection` now checks `Alive()` first and returns HTTP 503 + `ErrHubNotStarted` if the `Run()` goroutine has not started
+
 ## [1.3.0] - 2026-04-04
 
 ### Added
@@ -231,6 +246,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Examples: simple echo server, chat with rooms, JWT auth, metrics endpoint
 - Documentation: README, QUICKSTART, SCALABILITY, CONTRIBUTING
 
+[1.4.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.4.0
 [1.3.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.3.0
 [1.2.3]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.2.3
 [1.2.2]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.2.2

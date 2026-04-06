@@ -25,6 +25,7 @@ A production-ready, scalable WebSocket package for Go with support for rooms, br
 - **Limits & Rate Limiting**: Control connections, rooms, and message rates
 - **Backpressure Control**: Configurable drop policies with notification hooks
 - **Write Coalescing**: Opt-in batching of text messages into single frames for reduced syscalls
+- **Health Probes**: Built-in `/healthz` and `/readyz` handlers with JSON responses for Kubernetes
 - **Global Counts**: Cluster-wide client and room counts via presence gossip
 - **Zero Business Logic**: Pure infrastructure, bring your own logic
 
@@ -526,19 +527,15 @@ hub := wshub.NewHub(
 ### Health & Readiness Probes
 
 ```go
-// Readiness probe — returns 503 when draining or stopped
-http.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
-    if hub.IsRunning() {
-        w.WriteHeader(http.StatusOK)
-    } else {
-        w.WriteHeader(http.StatusServiceUnavailable)
-    }
-})
+// Drop-in HTTP handlers — respond with JSON and correct status codes
+http.Handle("/healthz", hub.HealthHandler()) // 200 while Run() is alive, else 503
+http.Handle("/readyz", hub.ReadyHandler())   // 200 while running, 503 when draining/stopped
 
-// Liveness probe — check hub state
-http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-    fmt.Fprintf(w, "state: %s", hub.State())
-})
+// Programmatic access
+hs := hub.Health()  // HealthStatus{Alive, Ready, State, Uptime, Clients}
+hub.Alive()         // true only while Run() goroutine is executing
+hub.Ready()         // true when alive and in StateRunning
+hub.Uptime()        // time.Duration since Run() started (0 if not started or exited)
 ```
 
 ## Backpressure Control
@@ -598,6 +595,8 @@ case wshub.ErrConnectionClosed:
     // Connection was closed
 case wshub.ErrSendBufferFull:
     // Send buffer full
+case wshub.ErrHubNotStarted:
+    // Hub Run() has not been called yet
 case wshub.ErrHubDraining:
     // Hub is draining, not accepting new connections
 case wshub.ErrHubStopped:

@@ -38,6 +38,16 @@
 //	hub.Drain(ctx)    // stop new connections, wait for existing ones
 //	hub.Shutdown(ctx) // force-close anything remaining
 //
+// # Health Probes
+//
+// Use [Hub.HealthHandler] and [Hub.ReadyHandler] as HTTP handlers for
+// liveness and readiness probes. For programmatic access, [Hub.Health]
+// returns a [HealthStatus] snapshot, and [Hub.Alive] / [Hub.Ready]
+// provide simple boolean checks:
+//
+//	http.Handle("/healthz", hub.HealthHandler())
+//	http.Handle("/readyz", hub.ReadyHandler())
+//
 // # Rooms
 //
 // Clients can join and leave named rooms via [Hub.JoinRoom] and [Hub.LeaveRoom].
