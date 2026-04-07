@@ -10,6 +10,36 @@ updates:
       - dependencies
     open-pull-requests-limit: 5
 
+  - package-ecosystem: gomod
+    directory: /prometheus
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps"
+    labels:
+      - dependencies
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: gomod
+    directory: /adapter/redis
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps"
+    labels:
+      - dependencies
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: gomod
+    directory: /adapter/nats
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps"
+    labels:
+      - dependencies
+    open-pull-requests-limit: 5
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
