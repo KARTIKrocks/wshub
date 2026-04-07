@@ -718,7 +718,7 @@ func TestHubParallelBroadcast(t *testing.T) {
 
 	dial, _ := testDialer(t, hub)
 	// Create enough clients to exceed batch size
-	var conns []*websocket.Conn
+	conns := make([]*websocket.Conn, 0, 5)
 	for range 5 {
 		conns = append(conns, dial())
 	}
@@ -772,7 +772,7 @@ func TestHubParallelBroadcastToRoom(t *testing.T) {
 	})
 
 	dial, _ := testDialer(t, hub)
-	var conns []*websocket.Conn
+	conns := make([]*websocket.Conn, 0, 5)
 	for range 5 {
 		conns = append(conns, dial())
 	}
@@ -2167,7 +2167,7 @@ func TestParallelBroadcastToRoomExcept(t *testing.T) {
 	})
 
 	dial, _ := testDialer(t, hub)
-	var conns []*websocket.Conn
+	conns := make([]*websocket.Conn, 0, 5)
 	for range 5 {
 		conns = append(conns, dial())
 	}

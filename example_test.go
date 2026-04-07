@@ -130,12 +130,12 @@ func ExampleDefaultLimits() {
 func ExampleNewDebugMetrics() {
 	metrics := wshub.NewDebugMetrics()
 	metrics.IncrementConnections()
-	metrics.IncrementMessages()
+	metrics.IncrementMessagesReceived()
 	metrics.RecordMessageSize(128)
 
 	stats := metrics.Stats()
 	fmt.Println("connections:", stats.ActiveConnections)
-	fmt.Println("messages:", stats.TotalMessages)
+	fmt.Println("messages:", stats.TotalMessagesRecv)
 	// Output:
 	// connections: 1
 	// messages: 1

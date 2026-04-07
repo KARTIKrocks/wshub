@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-04-07
+
+### Added
+
+- **Official Prometheus subpackage** (`github.com/KARTIKrocks/wshub/prometheus`) — drop-in `MetricsCollector` backed by `prometheus/client_golang`; exposes `connections_active`, `connections_total`, `messages_received_total`, `messages_sent_total`, `messages_dropped_total`, `message_received_bytes_total`, `message_latency_seconds`, `broadcast_duration_seconds`, `rooms_active`, `room_joins_total`, `room_leaves_total`, and `errors_total{type}`
+- `WithRegistry(reg)`, `WithNamespace(ns)`, `WithLatencyBuckets(buckets)`, `WithBroadcastBuckets(buckets)` options on the Prometheus collector
+- `MetricsCollector.IncrementMessagesSent(count int)` — tracks outbound message count across all write paths (single frames, coalesced batches, drain)
+- `MetricsCollector.IncrementMessagesDropped()` — dedicated counter for send-buffer-full drops (replaces the generic `IncrementErrors("send_buffer_full")` call)
+- `MetricsCollector.RecordBroadcastDuration(duration)` — histogram observation for local fanout time; recorded in `broadcast`, `broadcastExceptClients`, and `broadcastToRoomClients`
+- `MetricsCollector.IncrementRooms()` / `DecrementRooms()` — gauge tracking active room count; incremented in `JoinRoom`, decremented in `deleteRoomIfEmpty`
+- `DebugStats.TotalMessagesSent`, `TotalDropped`, `ActiveRooms`, `AvgBroadcast` — new fields in the `DebugMetrics` snapshot
+- `Makefile` targets: `test-prometheus` (runs the prometheus subpackage tests), `lint-fix` (golangci-lint with `--fix`), `fix` (`fmt` + `lint-fix`); `all` target now includes `test-prometheus`
+- `prealloc` linter enabled in `.golangci.yml`; `gofmt` formatter configured with `simplify: true`
+
+### Changed
+
+- **`MetricsCollector.IncrementMessages()` renamed to `IncrementMessagesReceived()`** — callers implementing the interface must rename their method; `DebugStats.TotalMessages` renamed to `TotalMessagesRecv`
+- `notifySendDropped` now calls `IncrementMessagesDropped()` instead of `IncrementErrors("send_buffer_full")`; custom metrics implementations that mapped `IncrementErrors` to a Prometheus label should migrate to the new dedicated counter
+
+### Fixed
+
+- **Infinite spin in `handleUnregister` drain loop** — when `CloseWithCode` had already closed the `client.send` channel, receiving from the closed channel returned immediately with the zero value, causing the drain loop to spin forever and hang the `Run` goroutine; the drain now checks `sendChanClosed` and skips the loop entirely in that case
+- **Stale room deletion in `deleteRoomIfEmpty`** — the identity check `h.rooms[roomName] == room` now guards deletion so a room that was concurrently recreated under the same name is not accidentally removed
+
 ## [1.4.0] - 2026-04-06
 
 ### Added
@@ -246,6 +270,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Examples: simple echo server, chat with rooms, JWT auth, metrics endpoint
 - Documentation: README, QUICKSTART, SCALABILITY, CONTRIBUTING
 
+[1.5.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.5.0
 [1.4.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.4.0
 [1.3.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.3.0
 [1.2.3]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.2.3

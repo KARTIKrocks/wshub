@@ -46,14 +46,18 @@ func main() {
 	http.HandleFunc("/metrics/json", func(w http.ResponseWriter, r *http.Request) {
 		stats := metrics.Stats()
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"active_connections":%d,"total_connections":%d,"total_messages":%d,"total_bytes":%d,"room_joins":%d,"room_leaves":%d,"avg_latency_ns":%d,"uptime_s":%.0f}`,
+		fmt.Fprintf(w, `{"active_connections":%d,"total_connections":%d,"messages_recv":%d,"messages_sent":%d,"messages_dropped":%d,"total_bytes":%d,"active_rooms":%d,"room_joins":%d,"room_leaves":%d,"avg_latency_ns":%d,"avg_broadcast_ns":%d,"uptime_s":%.0f}`,
 			stats.ActiveConnections,
 			stats.TotalConnections,
-			stats.TotalMessages,
+			stats.TotalMessagesRecv,
+			stats.TotalMessagesSent,
+			stats.TotalDropped,
 			stats.TotalMessageBytes,
+			stats.ActiveRooms,
 			stats.TotalRoomJoins,
 			stats.TotalRoomLeaves,
 			stats.AvgLatency,
+			stats.AvgBroadcast,
 			stats.Uptime.Seconds(),
 		)
 	})

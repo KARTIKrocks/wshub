@@ -20,7 +20,7 @@ A production-ready, scalable WebSocket package for Go with support for rooms, br
 - **Middleware System**: Chain handlers with custom logic
 - **Lifecycle Hooks**: Hook into connection, message, room, and backpressure events
 - **Room Support**: Group clients into rooms for targeted broadcasting
-- **Metrics & Logging**: Built-in interfaces for observability
+- **Metrics & Logging**: Built-in interfaces for observability; official Prometheus subpackage (`wshub/prometheus`)
 - **Configurable**: Extensive configuration with builder pattern
 - **Limits & Rate Limiting**: Control connections, rooms, and message rates
 - **Backpressure Control**: Configurable drop policies with notification hooks
@@ -402,35 +402,54 @@ hub := wshub.NewHub(wshub.WithLogger(&ZapLogger{logger}))
 
 ## Metrics
 
+Use the official Prometheus subpackage for production metrics:
+
 ```go
-// Implement the MetricsCollector interface
-type PrometheusMetrics struct {
-    connections   prometheus.Gauge
-    messages      prometheus.Counter
-    messageSize   prometheus.Histogram
-    errors        *prometheus.CounterVec
-}
+import (
+    wshubprom "github.com/KARTIKrocks/wshub/prometheus"
+    "github.com/prometheus/client_golang/prometheus"
+    "github.com/prometheus/client_golang/prometheus/promhttp"
+)
 
-func (m *PrometheusMetrics) IncrementConnections() {
-    m.connections.Inc()
-}
+reg := prometheus.NewRegistry()
+collector := wshubprom.New(wshubprom.WithRegistry(reg))
+hub := wshub.NewHub(wshub.WithMetrics(collector))
+go hub.Run()
 
-func (m *PrometheusMetrics) IncrementMessages() {
-    m.messages.Inc()
-}
+http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+```
 
-func (m *PrometheusMetrics) RecordMessageSize(size int) {
-    m.messageSize.Observe(float64(size))
-}
+Or implement the `MetricsCollector` interface yourself (e.g. for StatsD):
 
-func (m *PrometheusMetrics) IncrementErrors(errorType string) {
-    m.errors.WithLabelValues(errorType).Inc()
-}
+```go
+type MyMetrics struct{}
 
-// ... implement other methods
+func (m *MyMetrics) IncrementConnections()                          {}
+func (m *MyMetrics) DecrementConnections()                          {}
+func (m *MyMetrics) IncrementMessagesReceived()                     {}
+func (m *MyMetrics) IncrementMessagesSent(count int)                {}
+func (m *MyMetrics) IncrementMessagesDropped()                      {}
+func (m *MyMetrics) RecordMessageSize(size int)                     {}
+func (m *MyMetrics) RecordLatency(d time.Duration)                  {}
+func (m *MyMetrics) RecordBroadcastDuration(d time.Duration)        {}
+func (m *MyMetrics) IncrementErrors(errorType string)               {}
+func (m *MyMetrics) IncrementRoomJoins()                            {}
+func (m *MyMetrics) IncrementRoomLeaves()                           {}
+func (m *MyMetrics) IncrementRooms()                                {}
+func (m *MyMetrics) DecrementRooms()                                {}
 
-// Use it
-hub := wshub.NewHub(wshub.WithMetrics(NewPrometheusMetrics()))
+hub := wshub.NewHub(wshub.WithMetrics(&MyMetrics{}))
+```
+
+For development, use `DebugMetrics` for an in-memory snapshot:
+
+```go
+metrics := wshub.NewDebugMetrics()
+hub := wshub.NewHub(wshub.WithMetrics(metrics))
+
+// Later
+stats := metrics.Stats()
+fmt.Println(stats.ActiveConnections, stats.TotalMessagesRecv, stats.AvgBroadcast)
 ```
 
 ## Limits
