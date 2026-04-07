@@ -1,3 +1,5 @@
+github.com/KARTIKrocks/wshub v1.5.0 h1:NjpZWESD24VMt0pIgYz8/cn9XDjOScaNtzqrR2MSDLs=
+github.com/KARTIKrocks/wshub v1.5.0/go.mod h1:hXTsZKL8O30Q9aoDxmTkH4g6aPNd/zBkm5qnmHp+oIU=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
 github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=

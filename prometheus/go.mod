@@ -3,7 +3,7 @@ module github.com/KARTIKrocks/wshub/prometheus
 go 1.22
 
 require (
-	github.com/KARTIKrocks/wshub v0.0.0
+	github.com/KARTIKrocks/wshub v1.5.0
 	github.com/prometheus/client_golang v1.20.5
 	github.com/prometheus/client_model v0.6.1
 )
@@ -19,5 +19,3 @@ require (
 	golang.org/x/sys v0.22.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 )
-
-replace github.com/KARTIKrocks/wshub => ..

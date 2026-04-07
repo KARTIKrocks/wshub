@@ -3,7 +3,7 @@ module github.com/KARTIKrocks/wshub/examples/multinode
 go 1.22
 
 require (
-	github.com/KARTIKrocks/wshub v0.0.0
+	github.com/KARTIKrocks/wshub v1.5.0
 	github.com/KARTIKrocks/wshub/adapter/redis v0.0.0
 	github.com/redis/go-redis/v9 v9.7.3
 )
@@ -16,6 +16,5 @@ require (
 )
 
 replace (
-	github.com/KARTIKrocks/wshub => ../..
 	github.com/KARTIKrocks/wshub/adapter/redis => ../../adapter/redis
 )
