@@ -604,9 +604,11 @@ func (h *Hub) handleUnregister(client *Client) {
 	}
 
 	// Mark the client as closed so IsClosed() returns the correct value
-	// and SendMessage short-circuits.
+	// and SendMessage short-circuits. Track whether CloseWithCode already
+	// closed the send channel so we can skip the drain below.
 	client.mu.Lock()
-	if !client.closed {
+	sendChanClosed := client.closed
+	if !sendChanClosed {
 		client.closed = true
 		client.closedAt = time.Now()
 	}
@@ -621,12 +623,18 @@ func (h *Hub) handleUnregister(client *Client) {
 	// immediately rather than waiting for GC. We drain instead of
 	// close(client.send) to avoid a data race with concurrent senders
 	// in trySendErr that have already passed the closed check.
-drain:
-	for {
-		select {
-		case <-client.send:
-		default:
-			break drain
+	//
+	// Skip when CloseWithCode already closed the channel — receiving
+	// from a closed channel always succeeds with the zero value, which
+	// would spin this loop forever and hang the Run goroutine.
+	if !sendChanClosed {
+	drain:
+		for {
+			select {
+			case <-client.send:
+			default:
+				break drain
+			}
 		}
 	}
 
@@ -758,8 +766,9 @@ func (h *Hub) removeClientFromAllRoomsWithHooks(client *Client) {
 func (h *Hub) deleteRoomIfEmpty(roomName string, room *Room) {
 	h.roomsMu.Lock()
 	room.mu.Lock()
-	if len(room.clients) == 0 {
+	if len(room.clients) == 0 && h.rooms[roomName] == room {
 		delete(h.rooms, roomName)
+		h.metrics.DecrementRooms()
 	}
 	room.mu.Unlock()
 	h.roomsMu.Unlock()
@@ -1153,7 +1162,7 @@ func (h *Hub) notifySendDropped(client *Client, data []byte) {
 	h.logger.Warn("Client send buffer full, message dropped",
 		"clientID", client.ID,
 	)
-	h.metrics.IncrementErrors("send_buffer_full")
+	h.metrics.IncrementMessagesDropped()
 
 	if h.hooks.OnSendDropped != nil {
 		h.hooks.OnSendDropped(client, data)
@@ -1432,6 +1441,7 @@ func (h *Hub) parallelSend(clients []*Client, item sendItem) {
 
 // broadcast is the internal dispatch used by Broadcast and BroadcastBinary.
 func (h *Hub) broadcast(item sendItem) {
+	start := time.Now()
 	snap := h.loadSnapshot()
 	if h.useParallel {
 		h.parallelSend(snap.slice, item)
@@ -1440,6 +1450,7 @@ func (h *Hub) broadcast(item sendItem) {
 			h.trySend(client, item)
 		}
 	}
+	h.metrics.RecordBroadcastDuration(time.Since(start))
 }
 
 // Broadcast sends a text message to all connected clients.
@@ -1591,6 +1602,7 @@ func (h *Hub) BroadcastRawJSON(data []byte) {
 // using parallelSend when parallel mode is enabled. excludeSet may be nil for
 // small lists — isExcludedClient handles the fallback to linear scan.
 func (h *Hub) broadcastExceptClients(clients []*Client, item sendItem, except []*Client, excludeSet map[*Client]struct{}) {
+	start := time.Now()
 	if h.useParallel {
 		filtered := make([]*Client, 0, len(clients))
 		for _, client := range clients {
@@ -1606,6 +1618,7 @@ func (h *Hub) broadcastExceptClients(clients []*Client, item sendItem, except []
 			}
 		}
 	}
+	h.metrics.RecordBroadcastDuration(time.Since(start))
 }
 
 // BroadcastExcept sends a text message to all clients except those specified.
@@ -1774,6 +1787,7 @@ func (h *Hub) JoinRoom(client *Client, roomName string) error {
 			clients: make(map[*Client]struct{}),
 		}
 		h.rooms[roomName] = room
+		h.metrics.IncrementRooms()
 	}
 	h.roomsMu.Unlock()
 
@@ -1909,6 +1923,7 @@ func (h *Hub) LeaveAllRooms(client *Client) {
 // It snapshots membership under the room lock, then releases before
 // sending to avoid holding the lock during potentially slow channel ops.
 func (h *Hub) broadcastToRoomClients(room *Room, item sendItem) {
+	start := time.Now()
 	clients := loadRoomSnapshot(room)
 
 	if h.useParallel {
@@ -1918,6 +1933,7 @@ func (h *Hub) broadcastToRoomClients(room *Room, item sendItem) {
 			h.trySend(client, item)
 		}
 	}
+	h.metrics.RecordBroadcastDuration(time.Since(start))
 }
 
 // BroadcastToRoom sends a text message to all clients in a room.

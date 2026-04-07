@@ -11,6 +11,7 @@ linters:
     - gocritic
     - gocyclo
     - revive
+    - prealloc
   settings:
     gocyclo:
       min-complexity: 15
@@ -33,3 +34,6 @@ formatters:
   enable:
     - gofmt
     - goimports
+  settings:
+    gofmt:
+      simplify: true

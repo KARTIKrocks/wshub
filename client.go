@@ -452,7 +452,7 @@ func (c *Client) handleReadError(err error) {
 // processMessage runs hooks, client/hub handlers, and metrics for an accepted message.
 func (c *Client) processMessage(messageType int, data []byte) {
 	now := time.Now()
-	c.hub.metrics.IncrementMessages()
+	c.hub.metrics.IncrementMessagesReceived()
 	c.hub.metrics.RecordMessageSize(len(data))
 
 	msg := &Message{
@@ -541,6 +541,7 @@ func (c *Client) drainQueued() bool {
 				c.hub.metrics.IncrementErrors("write_error")
 				return false
 			}
+			c.hub.metrics.IncrementMessagesSent(1)
 		default:
 			return true
 		}
@@ -561,6 +562,7 @@ func (c *Client) drainQueuedCoalesced(first sendItem) bool {
 			c.hub.metrics.IncrementErrors("write_error")
 			return false
 		}
+		c.hub.metrics.IncrementMessagesSent(1)
 		if n == 0 {
 			return true
 		}
@@ -589,6 +591,7 @@ func (c *Client) writeCoalescedBatch(first sendItem, n int) bool {
 		c.hub.metrics.IncrementErrors("write_error")
 		return false
 	}
+	sentCount := 1
 
 	for range n {
 		select {
@@ -606,16 +609,19 @@ func (c *Client) writeCoalescedBatch(first sendItem, n int) bool {
 					c.hub.metrics.IncrementErrors("write_error")
 					return false
 				}
+				sentCount++
 			} else {
 				// Type changed: flush coalesced text, write non-text individually.
 				if err := w.Close(); err != nil {
 					c.hub.metrics.IncrementErrors("write_error")
 					return false
 				}
+				c.hub.metrics.IncrementMessagesSent(sentCount)
 				if err := c.conn.WriteMessage(queued.msgType, queued.data); err != nil {
 					c.hub.metrics.IncrementErrors("write_error")
 					return false
 				}
+				c.hub.metrics.IncrementMessagesSent(1)
 				return true
 			}
 		default:
@@ -623,6 +629,7 @@ func (c *Client) writeCoalescedBatch(first sendItem, n int) bool {
 				c.hub.metrics.IncrementErrors("write_error")
 				return false
 			}
+			c.hub.metrics.IncrementMessagesSent(sentCount)
 			return true
 		}
 	}
@@ -631,6 +638,7 @@ func (c *Client) writeCoalescedBatch(first sendItem, n int) bool {
 		c.hub.metrics.IncrementErrors("write_error")
 		return false
 	}
+	c.hub.metrics.IncrementMessagesSent(sentCount)
 	return true
 }
 
@@ -670,6 +678,7 @@ func (c *Client) writePump(ctx context.Context) {
 					c.hub.metrics.IncrementErrors("write_error")
 					return
 				}
+				c.hub.metrics.IncrementMessagesSent(1)
 				if !c.drainQueued() {
 					return
 				}

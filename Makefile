@@ -1,8 +1,8 @@
 GOLANGCI_LINT_VERSION := v2.10.1
 
-.PHONY: all setup deps test test-v vet lint build bench fuzz fmt cover clean ci
+.PHONY: all setup deps test test-v test-prometheus vet lint build bench fuzz fmt cover clean ci
 
-all: fmt vet lint test build
+all: fmt vet lint test test-prometheus build
 
 ## Install development tools (skips if already present)
 setup:
@@ -27,6 +27,15 @@ test:
 test-v:
 	go test -race -v -count=1 ./...
 
+## Run prometheus subpackage tests
+test-prometheus:
+	cd prometheus && go test -race -count=1 ./...
+
+## Format code
+fmt:
+	gofmt -w .
+	goimports -w .
+
 ## Run go vet
 vet:
 	go vet ./...
@@ -34,6 +43,13 @@ vet:
 ## Run golangci-lint
 lint: setup
 	golangci-lint run ./...
+
+## Run golangci-lint with auto-fix
+lint-fix:
+	golangci-lint run --fix ./...
+
+## Fix code formatting and linting issues
+fix: fmt lint-fix
 
 ## Build all packages
 build:
@@ -49,11 +65,6 @@ fuzz:
 	go test -fuzz=FuzzNewJSONMessage -fuzztime=30s .
 	go test -fuzz=FuzzRouterDispatch -fuzztime=30s .
 	go test -fuzz=FuzzMiddlewareChain -fuzztime=30s .
-
-## Format code
-fmt:
-	gofmt -w .
-	goimports -w .
 
 ## Run tests with coverage report
 cover:
