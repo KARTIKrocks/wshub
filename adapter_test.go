@@ -133,6 +133,19 @@ func setupHubPair(t *testing.T) (
 		hubB.Shutdown(ctx)
 	})
 
+	// Wait for both hubs to be ready before returning dial functions.
+	// UpgradeConnection rejects with 503 if Alive() is false, so we must
+	// not dial until Run() has started.
+	for _, h := range []*Hub{hubA, hubB} {
+		deadline := time.Now().Add(time.Second)
+		for !h.Ready() {
+			if time.Now().After(deadline) {
+				t.Fatal("hub did not become ready within 1s")
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+
 	dialA = makeDialer(t, hubA)
 	dialB = makeDialer(t, hubB)
 
