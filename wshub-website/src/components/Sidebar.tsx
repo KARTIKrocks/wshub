@@ -142,6 +142,7 @@ const sections: SectionItem[] = [
     children: [
       { id: 'metrics-interface', label: 'Metrics Interface' },
       { id: 'metrics-debug', label: 'Debug Metrics' },
+      { id: 'metrics-prometheus', label: 'Prometheus', minVersion: 'v1.5.0' },
     ],
   },
   {
