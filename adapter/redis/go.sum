@@ -1,5 +1,5 @@
-github.com/KARTIKrocks/wshub v1.5.0 h1:NjpZWESD24VMt0pIgYz8/cn9XDjOScaNtzqrR2MSDLs=
-github.com/KARTIKrocks/wshub v1.5.0/go.mod h1:hXTsZKL8O30Q9aoDxmTkH4g6aPNd/zBkm5qnmHp+oIU=
+github.com/KARTIKrocks/wshub v1.5.1 h1:RaDZMvlqLmknhUjHoPYSsDKZZ40RRgH+48M4RKkm6DY=
+github.com/KARTIKrocks/wshub v1.5.1/go.mod h1:hXTsZKL8O30Q9aoDxmTkH4g6aPNd/zBkm5qnmHp+oIU=
 github.com/bsm/ginkgo/v2 v2.12.0 h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=
 github.com/bsm/ginkgo/v2 v2.12.0/go.mod h1:SwYbGRRDovPVboqFv0tPTcG1sN61LM1Z4ARdbAV9g4c=
 github.com/bsm/gomega v1.27.10 h1:yeMWxP2pV2fG3FgAODIY8EiRE3dy0aeFYt4l7wh6yKA=

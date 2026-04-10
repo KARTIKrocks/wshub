@@ -3,7 +3,7 @@ module github.com/KARTIKrocks/wshub/adapter/redis
 go 1.22
 
 require (
-	github.com/KARTIKrocks/wshub v1.5.0
+	github.com/KARTIKrocks/wshub v1.5.1
 	github.com/redis/go-redis/v9 v9.18.0
 )
 
