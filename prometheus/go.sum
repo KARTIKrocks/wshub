@@ -1,5 +1,5 @@
-github.com/KARTIKrocks/wshub v1.5.0 h1:NjpZWESD24VMt0pIgYz8/cn9XDjOScaNtzqrR2MSDLs=
-github.com/KARTIKrocks/wshub v1.5.0/go.mod h1:hXTsZKL8O30Q9aoDxmTkH4g6aPNd/zBkm5qnmHp+oIU=
+github.com/KARTIKrocks/wshub v1.5.1 h1:RaDZMvlqLmknhUjHoPYSsDKZZ40RRgH+48M4RKkm6DY=
+github.com/KARTIKrocks/wshub v1.5.1/go.mod h1:hXTsZKL8O30Q9aoDxmTkH4g6aPNd/zBkm5qnmHp+oIU=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
