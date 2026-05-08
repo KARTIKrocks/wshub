@@ -1,6 +1,6 @@
 GOLANGCI_LINT_VERSION := v2.10.1
 
-.PHONY: all setup deps test test-v test-prometheus vet lint build bench fuzz fmt cover clean ci
+.PHONY: all setup deps test test-v test-prometheus vet lint build bench fuzz fmt cover clean ci loadtest
 
 all: fmt vet lint test test-prometheus build
 
@@ -71,6 +71,15 @@ cover:
 	go test -race ./... -coverprofile=coverage.out
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report: coverage.html"
+
+## Run load tests against a real wshub server with real WebSocket connections.
+## Examples:
+##   make loadtest                                                                # all scenarios, 1000 clients
+##   make loadtest LOADTEST_ARGS="-scenario=fanout -clients=10000"                # fanout only
+##   make loadtest LOADTEST_ARGS="-scenario=fanout -clients=10000 -parallel=100"  # parallel broadcast
+##   make loadtest LOADTEST_ARGS="-scenario=churn -clients=5000 -churn-rate=200"  # churn stress test
+loadtest:
+	go run ./cmd/loadtest/ $(LOADTEST_ARGS)
 
 ## Remove build artifacts
 clean:

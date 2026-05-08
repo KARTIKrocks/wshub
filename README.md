@@ -31,21 +31,24 @@ A production-ready, scalable WebSocket package for Go with support for rooms, br
 
 ## Performance Highlights
 
-Zero-allocation broadcasting, nanosecond lookups — built for scale. ([Full benchmarks](#benchmarks))
+Hot-path operations are zero-allocation; the dispatch loop iterates a lock-free
+snapshot. The numbers below are **in-process dispatch overhead** measured with
+mock clients — they show how fast the hub iterates its registry and pushes to
+client channels, _not_ end-to-end delivery latency over real WebSocket
+connections. For end-to-end numbers see [Real-world load tests](#real-world-load-tests).
 
 | Operation                | Scale             | Time    | Allocs |
 | ------------------------ | ----------------- | ------- | ------ |
-| `Broadcast`              | 100,000 clients   | 22.0 ms | 0      |
-| `Broadcast`              | 1,000,000 clients | 263 ms  | 0      |
-| `BroadcastToRoom`        | 1,000,000 clients | 260 ms  | 0      |
-| `BroadcastParallel`      | 50,000 clients    | 5.5 ms  | 1      |
 | `SendToClient`           | 1,000,000 clients | 130 ns  | 0      |
 | `SendToUser`             | 1,000,000 users   | 192 ns  | 1      |
 | `GetClient`              | 1,000 clients     | 17.7 ns | 0      |
 | `GlobalClientCount`      | 500 nodes         | 4.2 μs  | 0      |
 | Middleware chain (built) | 3 middlewares     | 14.3 ns | 0      |
+| `Broadcast` dispatch     | 1,000,000 clients | 263 ms  | 0      |
 
-> Message size has no impact on dispatch — 64 B and 64 KB both take ~5.7 μs for 100 clients.
+> The `Broadcast` row measures how long the hub takes to enqueue a message to
+> 1M client channels — actual delivery to remote clients is bounded by TCP,
+> writePump throughput, and the Go scheduler. See full benchmarks for detail.
 
 ## Installation
 
@@ -717,24 +720,38 @@ Save as `index.html` and open in a browser while the server is running:
 ## Performance Tips
 
 - Increase `SendChannelSize` for high-throughput scenarios
+- Enable `CoalesceWrites` to batch queued text frames into a single WebSocket write — reduces syscalls under sustained broadcast load
 - Enable compression for large messages
 - Use `BroadcastWithContext` for timeout control
 - Batch messages when possible
 - Monitor send buffer sizes via metrics
-- Use `WithParallelBroadcast(batchSize)` for 1000+ concurrent clients — dispatches batches to a persistent worker pool instead of spawning goroutines per broadcast
-- Use `WithParallelBroadcastWorkers(n)` to tune the pool size (default: `runtime.NumCPU()`)
+- For per-node fanout above ~5K clients, prefer scaling horizontally (multi-node via the Redis or NATS adapter) over `WithParallelBroadcast` — see [Real-world load tests](#real-world-load-tests)
 
 ## Benchmarks
 
-Measured on an Intel i5-11400H @ 2.70GHz (12 cores), Go 1.26, Linux. See [performance highlights](#performance-highlights) for a quick summary.
+Two kinds of numbers below:
+
+1. **In-process dispatch** (Go benchmarks with mock clients) — measures hub
+   bookkeeping and channel push cost. Useful for spotting allocation
+   regressions, not for predicting real throughput.
+2. **End-to-end load tests** (real `httptest.Server` + `gorilla/websocket`
+   dialer) — measures what an actual deployment will see.
+
+Measured on an Intel i5-11400H @ 2.70GHz (12 cores), Go 1.26, Linux.
 
 Run them yourself:
 
 ```bash
-go test -bench=. -benchmem ./...
+go test -bench=. -benchmem ./...      # in-process micro-benchmarks
+make loadtest LOADTEST_ARGS="..."     # end-to-end load tests
 ```
 
-### Broadcasting (zero allocations)
+### In-process dispatch (mock clients)
+
+These measure how fast the hub iterates its snapshot and pushes to client
+channels. They do **not** include TCP, writePump, or remote-client work.
+
+#### Broadcast dispatch (zero allocations)
 
 | Operation               | Clients   | Time    | Allocs |
 | ----------------------- | --------- | ------- | ------ |
@@ -747,17 +764,7 @@ go test -bench=. -benchmem ./...
 | `BroadcastToRoomExcept` | 100,000   | 26.0 ms | 1      |
 | `BroadcastToRoomExcept` | 1,000,000 | 277 ms  | 1      |
 
-### Parallel Broadcast (worker pool, 0–1 allocs)
-
-Uses a persistent worker pool instead of spawning goroutines per broadcast. The hub snapshot slice is pre-built on register/unregister, so parallel broadcasts allocate nothing beyond the pool task. Enable with `WithParallelBroadcast(batchSize)`.
-
-| Operation           | Clients | Time   | Allocs |
-| ------------------- | ------- | ------ | ------ |
-| `BroadcastParallel` | 100     | 5.6 μs | 0      |
-| `BroadcastParallel` | 10,000  | 989 μs | 1      |
-| `BroadcastParallel` | 50,000  | 5.5 ms | 1      |
-
-### Targeted Send (O(1) at any scale, zero allocations)
+#### Targeted Send (O(1) at any scale, zero allocations)
 
 | Operation      | Scale             | Time   | Allocs |
 | -------------- | ----------------- | ------ | ------ |
@@ -766,7 +773,7 @@ Uses a persistent worker pool instead of spawning goroutines per broadcast. The 
 | `SendToUser`   | 100,000 users     | 198 ns | 1      |
 | `SendToUser`   | 1,000,000 users   | 192 ns | 1      |
 
-### Global Counts — Presence (zero allocations)
+#### Global Counts — Presence (zero allocations)
 
 | Operation           | Nodes | Time   | Allocs |
 | ------------------- | ----- | ------ | ------ |
@@ -779,16 +786,7 @@ Uses a persistent worker pool instead of spawning goroutines per broadcast. The 
 | `GlobalRoomCount`   | 100   | 1.7 μs | 0      |
 | `GlobalRoomCount`   | 500   | 9.7 μs | 0      |
 
-### Message size has no impact on dispatch
-
-| Payload | Time (100 clients) | Allocs |
-| ------- | ------------------ | ------ |
-| 64 B    | 5.7 μs             | 0      |
-| 512 B   | 5.5 μs             | 0      |
-| 4 KB    | 5.4 μs             | 0      |
-| 64 KB   | 5.7 μs             | 0      |
-
-### Client & Room Lookups (zero allocations)
+#### Client & Room Lookups (zero allocations)
 
 | Operation                   | Time    | Allocs |
 | --------------------------- | ------- | ------ |
@@ -800,19 +798,67 @@ Uses a persistent worker pool instead of spawning goroutines per broadcast. The 
 | `GetMetadata`               | 17.0 ns | 0      |
 | `SetMetadata`               | 30.6 ns | 0      |
 
-### Client Send
+#### Client Send
 
 | Operation     | Time    | Allocs |
 | ------------- | ------- | ------ |
 | `Send` (text) | 82.9 ns | 1      |
 | `SendJSON`    | 495 ns  | 5      |
 
-### Middleware Chain
+#### Middleware Chain
 
 | Mode                 | Time    | Allocs |
 | -------------------- | ------- | ------ |
 | Built (cached)       | 14.3 ns | 0      |
 | Unbuilt (on-the-fly) | 17.0 ns | 0      |
+
+### Real-world load tests
+
+End-to-end timings using real WebSocket connections via `httptest.Server` and
+`gorilla/websocket.Dialer`. Latency is measured by embedding a unix-nano
+timestamp in the payload and computing `now - sent` on receive. Reproduce with
+`make loadtest`.
+
+#### Connect — handshake throughput
+
+| Clients | Connect time | Rate          | Mem/conn |
+| ------- | ------------ | ------------- | -------- |
+| 1,000   | 122 ms       | 8,205 conn/s  | 24.4 KB  |
+| 5,000   | 371 ms       | 13,486 conn/s | 20.5 KB  |
+| 10,000  | 485 ms       | 20,609 conn/s | 24.4 KB  |
+
+#### Fanout — single broadcaster, 100 msg/s for 10s, 128 B payload
+
+| Clients | Throughput    | p50      | p95      | p99      |
+| ------- | ------------- | -------- | -------- | -------- |
+| 1,000   | 100,000 msg/s | 2.53 ms  | 4.83 ms  | 6.68 ms  |
+| 5,000   | 497,000 msg/s | 44.04 ms | 396.9 ms | 632.6 ms |
+| 10,000  | 397,284 msg/s | 3.22 s   | 6.03 s   | 6.33 s   |
+
+> Past ~5K clients on a single node, fanout latency grows steeply — the bottleneck
+> is Go scheduler pressure across `3 × clients` goroutines (readPump + writePump
+>
+> - handshake server), not the hub's dispatch loop. For higher per-node fanout,
+>   tune `SendChannelSize`, enable `CoalesceWrites`, or scale horizontally.
+
+#### Rooms — broadcast scoped to a room (100 msg/s, 10s)
+
+| Clients | Rooms | Per-room p50 | p99      |
+| ------- | ----- | ------------ | -------- |
+| 5,000   | 100   | 11.01 ms     | 15.19 ms |
+| 10,000  | 100   | 29.15 ms     | 36.05 ms |
+
+#### Echo — per-connection round-trip (5,000 clients, 10s)
+
+| RTT/sec | p50      | p95      | p99      |
+| ------- | -------- | -------- | -------- |
+| 228,380 | 19.93 ms | 35.35 ms | 72.52 ms |
+
+> **Note on `WithParallelBroadcast`:** in real load tests, parallel dispatch is
+> consistently _slower_ than the default serial path because the per-call cost
+> of `trySend` (RLock + defer/recover) dominates and parallel batching can't
+> overcome it. The option remains for backward compatibility but is no longer
+> recommended — use the default serial broadcast.
 
 > Always call `Build()` on your middleware chain for best performance.
 

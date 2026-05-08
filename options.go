@@ -42,6 +42,14 @@ func WithHooks(hooks Hooks) Option {
 
 // WithParallelBroadcast enables parallel broadcasting with the given batch size.
 // batchSize determines how many clients each goroutine handles (recommended: 50-200).
+//
+// Deprecated: end-to-end load tests (see `make loadtest`) show parallel
+// dispatch is consistently slower than the default serial path — the per-call
+// cost of the non-blocking send (RLock + defer/recover) dominates and parallel
+// batching cannot overcome it. This option is retained for backward
+// compatibility and may be removed in a future major version. For per-node
+// fanout above ~5K clients, scale horizontally via the Redis or NATS adapter
+// rather than enabling parallel broadcast.
 func WithParallelBroadcast(batchSize int) Option {
 	return func(h *Hub) {
 		h.useParallel = true
@@ -54,6 +62,9 @@ func WithParallelBroadcast(batchSize int) Option {
 // WithParallelBroadcastWorkers sets the number of persistent worker goroutines
 // used for parallel broadcasting. The default is runtime.NumCPU().
 // This option has no effect unless WithParallelBroadcast is also set.
+//
+// Deprecated: see [WithParallelBroadcast]. Parallel broadcast is no longer
+// recommended; this tuning option is retained for backward compatibility.
 func WithParallelBroadcastWorkers(n int) Option {
 	return func(h *Hub) {
 		if n > 0 {
