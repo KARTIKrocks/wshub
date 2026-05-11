@@ -5,11 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.5.1] - 2026-05-11
+## [1.5.2] - 2026-05-11
 
 ### Fixed
 
 - **`writePump` no longer exits early on hub context cancellation** — shutdown now wakes the writer through the normal client close path (`client.send` / `client.done`) instead of selecting directly on `h.ctx.Done()`, giving queued messages and WebSocket close frames a chance to flush before the pump exits
+
+## [1.5.1] - 2026-04-08
+
+### deps
+
+- chore: update wshub dependency version to v1.5.0 across modules by @KARTIKrocks in https://github.com/KARTIKrocks/wshub/pull/24
+- test: ensure hubs are ready before returning dial functions in setuubPair by @KARTIKrocks in https://github.com/KARTIKrocks/wshub/pull/25
+- deps: bump github.com/redis/go-redis/v9 from 9.7.3 to 9.18.0 in /adapter/redis by @dependabot[bot] in https://github.com/KARTIKrocks/wshub/pull/20
+- deps: bump github.com/prometheus/client_golang from 1.20.5 to 1.23.2 in /prometheus by @dependabot[bot] in https://github.com/KARTIKrocks/wshub/pull/23
+- deps: bump github.com/nats-io/nats.go from 1.39.1 to 1.50.0 in /adapter/nats by @dependabot[bot] in https://github.com/KARTIKrocks/wshub/pull/21
 
 ## [1.5.0] - 2026-04-07
 
