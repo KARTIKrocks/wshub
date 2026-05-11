@@ -993,6 +993,21 @@ func waitFor(t *testing.T, timeout time.Duration, fn func() bool, msg string) {
 	t.Fatalf("waitFor timed out after %s: %s", timeout, msg)
 }
 
+func waitForClient(t *testing.T, hub *Hub) *Client {
+	t.Helper()
+
+	var client *Client
+	waitFor(t, time.Second, func() bool {
+		clients := hub.Clients()
+		if len(clients) == 0 {
+			return false
+		}
+		client = clients[0]
+		return true
+	}, "client snapshot to include registered client")
+	return client
+}
+
 // TestWritePumpExitsOnCloseWithCode verifies that calling CloseWithCode
 // drives writePump to send a close frame and exit. With ctx.Done() removed
 // from the writePump select, the path is: CloseWithCode → close(c.send) →
@@ -1000,9 +1015,8 @@ func waitFor(t *testing.T, timeout time.Duration, fn func() bool, msg string) {
 func TestWritePumpExitsOnCloseWithCode(t *testing.T) {
 	hub, dial := setupClientTest(t)
 	conn := dial()
-	waitFor(t, time.Second, func() bool { return hub.ClientCount() == 1 }, "client to register")
 
-	client := hub.Clients()[0]
+	client := waitForClient(t, hub)
 	if err := client.CloseWithCode(websocket.CloseGoingAway, "shutting down"); err != nil {
 		t.Fatalf("CloseWithCode: %v", err)
 	}
@@ -1032,7 +1046,7 @@ func TestWritePumpExitsOnCloseWithCode(t *testing.T) {
 func TestWritePumpExitsOnRemoteClose(t *testing.T) {
 	hub, dial := setupClientTest(t)
 	conn := dial()
-	waitFor(t, time.Second, func() bool { return hub.ClientCount() == 1 }, "client to register")
+	_ = waitForClient(t, hub)
 
 	if err := conn.Close(); err != nil {
 		t.Fatalf("conn.Close: %v", err)
@@ -1093,9 +1107,8 @@ func TestWritePumpExitsOnHubShutdown(t *testing.T) {
 func TestWritePumpDeliversBufferedSendsBeforeClose(t *testing.T) {
 	hub, dial := setupClientTest(t)
 	conn := dial()
-	waitFor(t, time.Second, func() bool { return hub.ClientCount() == 1 }, "client to register")
 
-	client := hub.Clients()[0]
+	client := waitForClient(t, hub)
 
 	const n = 5
 	for i := range n {
