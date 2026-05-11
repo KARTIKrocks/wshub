@@ -16,7 +16,7 @@ function updateUrlVersion(version: string, latestVersion: string) {
   history.replaceState(null, '', url.toString());
 }
 
-const LATEST_VERSION = 'v1.5.1';
+const LATEST_VERSION = 'v1.5.2';
 
 export default function VersionProvider({ children }: { children: ReactNode }) {
   const [releases, setReleases] = useState<Release[]>([]);
