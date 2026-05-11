@@ -979,3 +979,161 @@ func TestCoalesceWritesDisabledByDefault(t *testing.T) {
 		}
 	}
 }
+
+// waitFor polls fn at 10ms intervals until it returns true or timeout elapses.
+func waitFor(t *testing.T, timeout time.Duration, fn func() bool, msg string) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if fn() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("waitFor timed out after %s: %s", timeout, msg)
+}
+
+func waitForClient(t *testing.T, hub *Hub) *Client {
+	t.Helper()
+
+	var client *Client
+	waitFor(t, time.Second, func() bool {
+		clients := hub.Clients()
+		if len(clients) == 0 {
+			return false
+		}
+		client = clients[0]
+		return true
+	}, "client snapshot to include registered client")
+	return client
+}
+
+// TestWritePumpExitsOnCloseWithCode verifies that calling CloseWithCode
+// drives writePump to send a close frame and exit. With ctx.Done() removed
+// from the writePump select, the path is: CloseWithCode → close(c.send) →
+// writePump observes ok=false → writeCloseFrame → return.
+func TestWritePumpExitsOnCloseWithCode(t *testing.T) {
+	hub, dial := setupClientTest(t)
+	conn := dial()
+
+	client := waitForClient(t, hub)
+	if err := client.CloseWithCode(websocket.CloseGoingAway, "shutting down"); err != nil {
+		t.Fatalf("CloseWithCode: %v", err)
+	}
+
+	// Client side should observe a close frame, then EOF.
+	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+	_, _, err := conn.ReadMessage()
+	if err == nil {
+		t.Fatal("expected close error from server, got nil")
+	}
+	ce, ok := err.(*websocket.CloseError)
+	if !ok {
+		t.Fatalf("expected *websocket.CloseError, got %T: %v", err, err)
+	}
+	if ce.Code != websocket.CloseGoingAway {
+		t.Errorf("close code = %d, want %d", ce.Code, websocket.CloseGoingAway)
+	}
+
+	// writePump must have exited and unregistered the client.
+	waitFor(t, time.Second, func() bool { return hub.ClientCount() == 0 },
+		"client to be unregistered after CloseWithCode")
+}
+
+// TestWritePumpExitsOnRemoteClose verifies the unregister path: when the
+// remote client closes the connection, readPump exits, handleUnregister
+// runs, closeDone() fires, and writePump exits via the c.done case.
+func TestWritePumpExitsOnRemoteClose(t *testing.T) {
+	hub, dial := setupClientTest(t)
+	conn := dial()
+	_ = waitForClient(t, hub)
+
+	if err := conn.Close(); err != nil {
+		t.Fatalf("conn.Close: %v", err)
+	}
+
+	waitFor(t, time.Second, func() bool { return hub.ClientCount() == 0 },
+		"client to be unregistered after remote close")
+}
+
+// TestWritePumpExitsOnHubShutdown verifies that hub.Shutdown drives every
+// active writePump to exit. With ctx.Done() removed from writePump, the
+// path is: Run sees h.ctx.Done() → calls client.Close() on each → close(c.send)
+// → writePump exits via the send case with ok=false.
+func TestWritePumpExitsOnHubShutdown(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hub.UpgradeConnection(w, r)
+	}))
+	t.Cleanup(server.Close)
+
+	const n = 5
+	conns := make([]*websocket.Conn, 0, n)
+	dialer := websocket.Dialer{}
+	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws"
+	for range n {
+		c, _, err := dialer.Dial(url, nil)
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		t.Cleanup(func() { c.Close() })
+		conns = append(conns, c)
+	}
+	waitFor(t, time.Second, func() bool { return hub.ClientCount() == n }, "all clients to register")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := hub.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+
+	// Every dialer-side conn should now observe an error on read — the writePump
+	// has sent a close frame (or the conn is dead) and the readPump has exited.
+	for i, c := range conns {
+		_ = c.SetReadDeadline(time.Now().Add(time.Second))
+		if _, _, err := c.ReadMessage(); err == nil {
+			t.Errorf("conn %d: expected error after hub.Shutdown, got nil", i)
+		}
+	}
+}
+
+// TestWritePumpDeliversBufferedSendsBeforeClose verifies that messages
+// already queued in c.send are delivered before writePump exits when
+// CloseWithCode runs. The drainQueued path inside writePump is responsible
+// for this; with ctx.Done() removed, the only exit signal is c.send being
+// closed, which now happens AFTER buffered items are written.
+func TestWritePumpDeliversBufferedSendsBeforeClose(t *testing.T) {
+	hub, dial := setupClientTest(t)
+	conn := dial()
+
+	client := waitForClient(t, hub)
+
+	const n = 5
+	for i := range n {
+		if err := client.SendText(strings.Repeat("x", i+1)); err != nil {
+			t.Fatalf("Send %d: %v", i, err)
+		}
+	}
+	if err := client.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	got := 0
+	for got < n {
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			break
+		}
+		want := strings.Repeat("x", got+1)
+		if string(msg) != want {
+			t.Errorf("frame %d = %q, want %q", got, msg, want)
+		}
+		got++
+	}
+	if got != n {
+		t.Errorf("delivered %d frames before close, want %d", got, n)
+	}
+}
