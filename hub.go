@@ -1049,7 +1049,7 @@ func (h *Hub) UpgradeConnection(w http.ResponseWriter, r *http.Request, opts ...
 	h.wg.Add(2)
 	go func() {
 		defer h.wg.Done()
-		client.writePump(h.ctx)
+		client.writePump()
 	}()
 	go func() {
 		defer h.wg.Done()

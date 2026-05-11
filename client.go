@@ -643,7 +643,19 @@ func (c *Client) writeCoalescedBatch(first sendItem, n int) bool {
 }
 
 // writePump pumps messages from the hub to the WebSocket connection.
-func (c *Client) writePump(ctx context.Context) {
+//
+// Shutdown signals (in priority order):
+//   - CloseWithCode → closes c.send → exits via the send case with ok=false,
+//     sending a close frame.
+//   - handleUnregister (remote/abnormal close) → closes c.done → exits without
+//     a close frame (the connection is already gone).
+//   - hub.Shutdown → calls Close on each client → same path as CloseWithCode.
+//
+// We deliberately do NOT select on the hub's context. Hub shutdown closes
+// every client's send channel, which already wakes the pump; adding a fourth
+// select case measurably increases per-iteration cost (selectgo grows roughly
+// linearly with case count) without changing correctness.
+func (c *Client) writePump() {
 	ticker := time.NewTicker(c.config.PingPeriod)
 	defer func() {
 		ticker.Stop()
@@ -652,9 +664,6 @@ func (c *Client) writePump(ctx context.Context) {
 
 	for {
 		select {
-		case <-ctx.Done():
-			return
-
 		case <-c.done:
 			// Client was unregistered (remote/abnormal close). Exit
 			// without sending a close frame — the connection is gone.
