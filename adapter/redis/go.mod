@@ -4,7 +4,7 @@ go 1.24
 
 require (
 	github.com/KARTIKrocks/wshub v1.5.2
-	github.com/redis/go-redis/v9 v9.19.0
+	github.com/redis/go-redis/v9 v9.20.0
 )
 
 require (
