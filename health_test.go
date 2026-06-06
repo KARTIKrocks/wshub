@@ -12,6 +12,18 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// waitForReady polls hub.Ready() until it returns true or timeout elapses.
+func waitForReady(t *testing.T, hub *Hub, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for !hub.Ready() {
+		if time.Now().After(deadline) {
+			t.Fatalf("hub did not become ready within %s", timeout)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func TestAlive_BeforeRun(t *testing.T) {
 	hub := NewHub()
 	if hub.Alive() {
@@ -31,7 +43,7 @@ func TestAlive_AfterRun(t *testing.T) {
 		hub.Shutdown(ctx)
 	})
 
-	time.Sleep(50 * time.Millisecond)
+	waitForReady(t, hub, time.Second)
 
 	if !hub.Alive() {
 		t.Fatal("Alive() should be true after Run()")
@@ -45,7 +57,7 @@ func TestAlive_AfterShutdown(t *testing.T) {
 	hub := NewHub()
 	go hub.Run()
 
-	time.Sleep(50 * time.Millisecond)
+	waitForReady(t, hub, time.Second)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -68,7 +80,7 @@ func TestReady_WhileDraining(t *testing.T) {
 		hub.Shutdown(ctx)
 	})
 
-	time.Sleep(50 * time.Millisecond)
+	waitForReady(t, hub, time.Second)
 
 	drainCtx, drainCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer drainCancel()
@@ -127,7 +139,7 @@ func TestHealth_Snapshot(t *testing.T) {
 	}
 	t.Cleanup(func() { conn.Close() })
 
-	time.Sleep(50 * time.Millisecond)
+	waitForClientCount(t, hub, 1, time.Second)
 
 	hs := hub.Health()
 	if !hs.Alive {
@@ -165,7 +177,7 @@ func TestHealthHandler_Running(t *testing.T) {
 		hub.Shutdown(ctx)
 	})
 
-	time.Sleep(50 * time.Millisecond)
+	waitForReady(t, hub, time.Second)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -225,7 +237,7 @@ func TestReadyHandler_Running(t *testing.T) {
 		hub.Shutdown(ctx)
 	})
 
-	time.Sleep(50 * time.Millisecond)
+	waitForReady(t, hub, time.Second)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
@@ -253,7 +265,7 @@ func TestReadyHandler_Draining(t *testing.T) {
 		hub.Shutdown(ctx)
 	})
 
-	time.Sleep(50 * time.Millisecond)
+	waitForReady(t, hub, time.Second)
 
 	drainCtx, drainCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer drainCancel()

@@ -7,6 +7,7 @@ import (
 )
 
 func TestWithConfig(t *testing.T) {
+	t.Parallel()
 	cfg := Config{
 		WriteWait:  5 * time.Second,
 		PongWait:   30 * time.Second,
@@ -22,6 +23,7 @@ func TestWithConfig(t *testing.T) {
 }
 
 func TestWithHooks(t *testing.T) {
+	t.Parallel()
 	called := false
 	hooks := Hooks{
 		AfterConnect: func(c *Client) {
@@ -39,6 +41,7 @@ func TestWithHooks(t *testing.T) {
 }
 
 func TestWithParallelBroadcast(t *testing.T) {
+	t.Parallel()
 	hub := NewHub(WithParallelBroadcast(100))
 	if !hub.useParallel {
 		t.Error("useParallel should be true")
@@ -49,6 +52,7 @@ func TestWithParallelBroadcast(t *testing.T) {
 }
 
 func TestWithParallelBroadcast_ZeroBatchSize(t *testing.T) {
+	t.Parallel()
 	hub := NewHub(WithParallelBroadcast(0))
 	if !hub.useParallel {
 		t.Error("useParallel should be true")
@@ -60,6 +64,7 @@ func TestWithParallelBroadcast_ZeroBatchSize(t *testing.T) {
 }
 
 func TestWithParallelBroadcastWorkers(t *testing.T) {
+	t.Parallel()
 	hub := NewHub(WithParallelBroadcast(100), WithParallelBroadcastWorkers(8))
 	if hub.poolSize != 8 {
 		t.Errorf("poolSize = %d, want 8", hub.poolSize)
@@ -67,6 +72,7 @@ func TestWithParallelBroadcastWorkers(t *testing.T) {
 }
 
 func TestWithParallelBroadcastWorkers_Zero(t *testing.T) {
+	t.Parallel()
 	hub := NewHub(WithParallelBroadcastWorkers(0))
 	if hub.poolSize != runtime.NumCPU() {
 		t.Errorf("poolSize = %d, want default %d", hub.poolSize, runtime.NumCPU())
@@ -74,6 +80,7 @@ func TestWithParallelBroadcastWorkers_Zero(t *testing.T) {
 }
 
 func TestWithMessageHandler(t *testing.T) {
+	t.Parallel()
 	called := false
 	handler := func(c *Client, m *Message) error {
 		called = true

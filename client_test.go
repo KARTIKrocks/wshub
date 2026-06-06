@@ -45,9 +45,8 @@ func setupClientTest(t *testing.T) (*Hub, func() *websocket.Conn) {
 func TestClientSetUserID(t *testing.T) {
 	hub, dial := setupClientTest(t)
 	dial()
-	time.Sleep(50 * time.Millisecond)
 
-	client := hub.Clients()[0]
+	client := waitForClient(t, hub)
 
 	err := client.SetUserID("user-1")
 	if err != nil {
@@ -67,9 +66,8 @@ func TestClientSetUserID(t *testing.T) {
 func TestClientSetUserIDConcurrent(t *testing.T) {
 	hub, dial := setupClientTest(t)
 	dial()
-	time.Sleep(50 * time.Millisecond)
 
-	client := hub.Clients()[0]
+	client := waitForClient(t, hub)
 
 	var wg sync.WaitGroup
 	for i := range 50 {

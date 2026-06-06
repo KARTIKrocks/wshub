@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -16,6 +17,7 @@ func jsonExtractor(msg *Message) string {
 }
 
 func TestRouterDispatch(t *testing.T) {
+	t.Parallel()
 	chatCalled := false
 	joinCalled := false
 
@@ -49,6 +51,7 @@ func TestRouterDispatch(t *testing.T) {
 }
 
 func TestRouterNotFound(t *testing.T) {
+	t.Parallel()
 	router := NewRouter(jsonExtractor)
 
 	msg := &Message{Data: []byte(`{"type":"unknown"}`)}
@@ -59,6 +62,7 @@ func TestRouterNotFound(t *testing.T) {
 }
 
 func TestRouterCustomNotFound(t *testing.T) {
+	t.Parallel()
 	notFoundCalled := false
 
 	router := NewRouter(jsonExtractor).
@@ -78,8 +82,12 @@ func TestRouterCustomNotFound(t *testing.T) {
 }
 
 func TestRouterConcurrentAccess(t *testing.T) {
+	var invocations atomic.Int64
+	var errCount atomic.Int64
+
 	router := NewRouter(jsonExtractor).
 		On("ping", func(c *Client, m *Message) error {
+			invocations.Add(1)
 			return nil
 		})
 
@@ -90,8 +98,17 @@ func TestRouterConcurrentAccess(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			router.Handle(nil, msg)
+			if err := router.Handle(nil, msg); err != nil {
+				errCount.Add(1)
+			}
 		}()
 	}
 	wg.Wait()
+
+	if invocations.Load() != 100 {
+		t.Errorf("handler invocations = %d, want 100", invocations.Load())
+	}
+	if errCount.Load() != 0 {
+		t.Errorf("error count = %d, want 0", errCount.Load())
+	}
 }

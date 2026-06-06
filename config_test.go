@@ -141,22 +141,25 @@ func TestAllowOrigins(t *testing.T) {
 	check := AllowOrigins("https://example.com", "https://app.example.com")
 
 	tests := []struct {
+		name   string
 		origin string
 		want   bool
 	}{
-		{"", true},
-		{"https://example.com", true},
-		{"https://app.example.com", true},
-		{"https://evil.com", false},
+		{"empty origin", "", true},
+		{"allowed example.com", "https://example.com", true},
+		{"allowed app.example.com", "https://app.example.com", true},
+		{"forbidden evil.com", "https://evil.com", false},
 	}
 	for _, tt := range tests {
-		r := &http.Request{Header: http.Header{}}
-		if tt.origin != "" {
-			r.Header.Set("Origin", tt.origin)
-		}
-		if got := check(r); got != tt.want {
-			t.Errorf("AllowOrigins(%q) = %v, want %v", tt.origin, got, tt.want)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			r := &http.Request{Header: http.Header{}}
+			if tt.origin != "" {
+				r.Header.Set("Origin", tt.origin)
+			}
+			if got := check(r); got != tt.want {
+				t.Errorf("AllowOrigins(%q) = %v, want %v", tt.origin, got, tt.want)
+			}
+		})
 	}
 }
 

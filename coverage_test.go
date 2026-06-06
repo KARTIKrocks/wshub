@@ -12,8 +12,20 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Helper: dial with upgrade options
+// Helpers
 // ---------------------------------------------------------------------------
+
+// waitForClientCount polls hub.ClientCount() until it reaches the expected count or timeout elapses.
+func waitForClientCount(t *testing.T, hub *Hub, expected int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for hub.ClientCount() != expected {
+		if time.Now().After(deadline) {
+			t.Fatalf("client count did not reach %d within %s (got %d)", expected, timeout, hub.ClientCount())
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
 
 func testDialerWithOpts(t *testing.T, hub *Hub, opts ...UpgradeOption) func() *websocket.Conn {
 	t.Helper()
@@ -50,13 +62,13 @@ func TestBroadcastBinaryExcept(t *testing.T) {
 
 	dial, _ := testDialer(t, hub)
 	conn1 := dial()
-	time.Sleep(50 * time.Millisecond)
+	waitForClientCount(t, hub, 1, time.Second)
 
 	clients := hub.Clients()
 	client1 := clients[0]
 
 	conn2 := dial()
-	time.Sleep(50 * time.Millisecond)
+	waitForClientCount(t, hub, 2, time.Second)
 
 	// Exclude client1.
 	hub.BroadcastBinaryExcept([]byte{0xAA, 0xBB}, client1)
@@ -88,7 +100,7 @@ func TestSendBinaryToUser(t *testing.T) {
 
 	dial, _ := testDialer(t, hub)
 	conn := dial()
-	time.Sleep(50 * time.Millisecond)
+	waitForClientCount(t, hub, 1, time.Second)
 
 	clients := hub.Clients()
 	_ = clients[0].SetUserID("binary-user")
@@ -115,7 +127,7 @@ func TestSendBinaryToClient(t *testing.T) {
 
 	dial, _ := testDialer(t, hub)
 	conn := dial()
-	time.Sleep(50 * time.Millisecond)
+	waitForClientCount(t, hub, 1, time.Second)
 
 	clients := hub.Clients()
 	err := hub.SendBinaryToClient(clients[0].ID, []byte{0xFF})
@@ -143,7 +155,7 @@ func TestBroadcastBinaryToRoom(t *testing.T) {
 
 	dial, _ := testDialer(t, hub)
 	conn := dial()
-	time.Sleep(50 * time.Millisecond)
+	waitForClientCount(t, hub, 1, time.Second)
 
 	clients := hub.Clients()
 	_ = hub.JoinRoom(clients[0], "bin-room")
@@ -173,7 +185,7 @@ func TestBroadcastBinaryToRoomExcept(t *testing.T) {
 
 	dial, _ := testDialer(t, hub)
 	conn1 := dial()
-	time.Sleep(50 * time.Millisecond)
+	waitForClientCount(t, hub, 1, time.Second)
 
 	// Identify client1 before dialing the second connection.
 	clients := hub.Clients()
@@ -183,7 +195,7 @@ func TestBroadcastBinaryToRoomExcept(t *testing.T) {
 	client1 := clients[0]
 
 	conn2 := dial()
-	time.Sleep(50 * time.Millisecond)
+	waitForClientCount(t, hub, 2, time.Second)
 
 	// Find client2.
 	allClients := hub.Clients()
@@ -238,7 +250,7 @@ func TestSendToUserWithContext(t *testing.T) {
 
 	dial, _ := testDialer(t, hub)
 	conn := dial()
-	time.Sleep(50 * time.Millisecond)
+	waitForClientCount(t, hub, 1, time.Second)
 
 	clients := hub.Clients()
 	_ = clients[0].SetUserID("ctx-user")
@@ -286,7 +298,7 @@ func TestSendToClientWithContext(t *testing.T) {
 
 	dial, _ := testDialer(t, hub)
 	conn := dial()
-	time.Sleep(50 * time.Millisecond)
+	waitForClientCount(t, hub, 1, time.Second)
 
 	clients := hub.Clients()
 
@@ -351,7 +363,7 @@ func TestBroadcastToRoomWithContext(t *testing.T) {
 
 	dial, _ := testDialer(t, hub)
 	conn := dial()
-	time.Sleep(50 * time.Millisecond)
+	waitForClientCount(t, hub, 1, time.Second)
 
 	clients := hub.Clients()
 	_ = hub.JoinRoom(clients[0], "ctx-room")
@@ -466,7 +478,7 @@ func TestWithUserIDUpgradeOption(t *testing.T) {
 
 	dial := testDialerWithOpts(t, hub, WithUserID("user-abc"))
 	dial()
-	time.Sleep(50 * time.Millisecond)
+	waitForClientCount(t, hub, 1, time.Second)
 
 	clients := hub.Clients()
 	if len(clients) != 1 {

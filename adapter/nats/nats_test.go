@@ -12,18 +12,31 @@ func TestAdapterImplementsInterface(t *testing.T) {
 }
 
 func TestWithSubject(t *testing.T) {
-	a := &Adapter{subject: defaultSubject}
-	WithSubject("custom.subject")(a)
-	if a.subject != "custom.subject" {
-		t.Errorf("subject = %q, want %q", a.subject, "custom.subject")
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "custom subject",
+			input:    "custom.subject",
+			expected: "custom.subject",
+		},
+		{
+			name:     "empty subject uses default",
+			input:    "",
+			expected: defaultSubject,
+		},
 	}
-}
 
-func TestWithSubjectEmpty(t *testing.T) {
-	a := &Adapter{subject: defaultSubject}
-	WithSubject("")(a)
-	if a.subject != defaultSubject {
-		t.Errorf("subject = %q, want default %q", a.subject, defaultSubject)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := &Adapter{subject: defaultSubject}
+			WithSubject(tt.input)(a)
+			if a.subject != tt.expected {
+				t.Errorf("subject = %q, want %q", a.subject, tt.expected)
+			}
+		})
 	}
 }
 
