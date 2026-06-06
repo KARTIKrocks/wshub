@@ -5,40 +5,49 @@ import (
 	"testing"
 )
 
-func TestIsChanSendPanic_Nil(t *testing.T) {
-	if isChanSendPanic(nil) {
-		t.Error("nil should not be a chan send panic")
+func TestIsChanSendPanic(t *testing.T) {
+	tests := []struct {
+		name  string
+		input any
+		want  bool
+	}{
+		{
+			name:  "nil",
+			input: nil,
+			want:  false,
+		},
+		{
+			name:  "error type with send on closed channel",
+			input: errors.New("send on closed channel"),
+			want:  true,
+		},
+		{
+			name:  "error type no match",
+			input: errors.New("something else"),
+			want:  false,
+		},
+		{
+			name:  "string type with send on closed channel",
+			input: "send on closed channel",
+			want:  true,
+		},
+		{
+			name:  "string type no match",
+			input: "index out of range",
+			want:  false,
+		},
+		{
+			name:  "int type (default case)",
+			input: 42,
+			want:  false,
+		},
 	}
-}
 
-func TestIsChanSendPanic_ErrorType(t *testing.T) {
-	err := errors.New("send on closed channel")
-	if !isChanSendPanic(err) {
-		t.Error("error containing 'send on closed channel' should be detected")
-	}
-}
-
-func TestIsChanSendPanic_ErrorTypeNoMatch(t *testing.T) {
-	err := errors.New("something else")
-	if isChanSendPanic(err) {
-		t.Error("unrelated error should not match")
-	}
-}
-
-func TestIsChanSendPanic_StringType(t *testing.T) {
-	if !isChanSendPanic("send on closed channel") {
-		t.Error("string containing 'send on closed channel' should be detected")
-	}
-}
-
-func TestIsChanSendPanic_StringTypeNoMatch(t *testing.T) {
-	if isChanSendPanic("index out of range") {
-		t.Error("unrelated string should not match")
-	}
-}
-
-func TestIsChanSendPanic_IntType(t *testing.T) {
-	if isChanSendPanic(42) {
-		t.Error("int type should return false (default case)")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isChanSendPanic(tt.input); got != tt.want {
+				t.Errorf("isChanSendPanic(%v) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
 	}
 }

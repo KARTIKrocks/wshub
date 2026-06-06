@@ -17,11 +17,13 @@ func newTestCollector(t *testing.T) (*Collector, *prom.Registry) {
 }
 
 func TestCollectorImplementsInterface(t *testing.T) {
+	t.Parallel()
 	reg := prom.NewRegistry()
 	var _ wshub.MetricsCollector = New(WithRegistry(reg))
 }
 
 func TestConnections(t *testing.T) {
+	t.Parallel()
 	c, reg := newTestCollector(t)
 	c.IncrementConnections()
 	c.IncrementConnections()
@@ -32,6 +34,7 @@ func TestConnections(t *testing.T) {
 }
 
 func TestMessagesReceived(t *testing.T) {
+	t.Parallel()
 	c, reg := newTestCollector(t)
 	c.IncrementMessagesReceived()
 	c.IncrementMessagesReceived()
@@ -40,6 +43,7 @@ func TestMessagesReceived(t *testing.T) {
 }
 
 func TestMessagesSent(t *testing.T) {
+	t.Parallel()
 	c, reg := newTestCollector(t)
 	c.IncrementMessagesSent(1)
 	c.IncrementMessagesSent(5)
@@ -48,6 +52,7 @@ func TestMessagesSent(t *testing.T) {
 }
 
 func TestMessagesDropped(t *testing.T) {
+	t.Parallel()
 	c, reg := newTestCollector(t)
 	c.IncrementMessagesDropped()
 	c.IncrementMessagesDropped()
@@ -56,6 +61,7 @@ func TestMessagesDropped(t *testing.T) {
 }
 
 func TestMessageSize(t *testing.T) {
+	t.Parallel()
 	c, reg := newTestCollector(t)
 	c.RecordMessageSize(100)
 	c.RecordMessageSize(200)
@@ -64,6 +70,7 @@ func TestMessageSize(t *testing.T) {
 }
 
 func TestLatency(t *testing.T) {
+	t.Parallel()
 	c, reg := newTestCollector(t)
 	c.RecordLatency(10 * time.Millisecond)
 	c.RecordLatency(20 * time.Millisecond)
@@ -72,6 +79,7 @@ func TestLatency(t *testing.T) {
 }
 
 func TestBroadcastDuration(t *testing.T) {
+	t.Parallel()
 	c, reg := newTestCollector(t)
 	c.RecordBroadcastDuration(100 * time.Microsecond)
 	c.RecordBroadcastDuration(200 * time.Microsecond)
@@ -80,6 +88,7 @@ func TestBroadcastDuration(t *testing.T) {
 }
 
 func TestRooms(t *testing.T) {
+	t.Parallel()
 	c, reg := newTestCollector(t)
 	c.IncrementRooms()
 	c.IncrementRooms()
@@ -94,6 +103,7 @@ func TestRooms(t *testing.T) {
 }
 
 func TestErrors(t *testing.T) {
+	t.Parallel()
 	c, reg := newTestCollector(t)
 	c.IncrementErrors("write_error")
 	c.IncrementErrors("write_error")
@@ -127,6 +137,7 @@ func TestErrors(t *testing.T) {
 }
 
 func TestCustomNamespace(t *testing.T) {
+	t.Parallel()
 	reg := prom.NewRegistry()
 	c := New(WithRegistry(reg), WithNamespace("myapp"))
 	c.IncrementConnections()
@@ -136,6 +147,7 @@ func TestCustomNamespace(t *testing.T) {
 }
 
 func TestCustomBuckets(t *testing.T) {
+	t.Parallel()
 	reg := prom.NewRegistry()
 	c := New(
 		WithRegistry(reg),

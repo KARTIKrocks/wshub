@@ -38,11 +38,20 @@ func WithSubject(subject string) Option {
 	}
 }
 
+// WithUnmarshalErrorHandler sets a callback to handle JSON unmarshal errors
+// in the Subscribe callback. If not set, unmarshal errors are silently ignored.
+func WithUnmarshalErrorHandler(handler func(data []byte, err error)) Option {
+	return func(a *Adapter) {
+		a.unmarshalErrorHandler = handler
+	}
+}
+
 // Adapter implements wshub.Adapter using NATS core Pub/Sub.
 // It is safe for concurrent use.
 type Adapter struct {
-	conn    *gonats.Conn
-	subject string
+	conn                  *gonats.Conn
+	subject               string
+	unmarshalErrorHandler func(data []byte, err error)
 
 	mu     sync.Mutex
 	sub    *gonats.Subscription
@@ -90,10 +99,21 @@ func (a *Adapter) Publish(ctx context.Context, msg wshub.AdapterMessage) error {
 // The subscription is stopped when the context is cancelled, Close is
 // called, or the NATS connection is closed.
 func (a *Adapter) Subscribe(ctx context.Context, handler func(wshub.AdapterMessage)) error {
+	// Drain any existing subscription to prevent leak.
+	a.mu.Lock()
+	if a.sub != nil {
+		_ = a.sub.Drain()
+		a.sub = nil
+	}
+	a.mu.Unlock()
+
 	sub, err := a.conn.Subscribe(a.subject, func(msg *gonats.Msg) {
 		var am wshub.AdapterMessage
 		if err := json.Unmarshal(msg.Data, &am); err != nil {
-			return // skip malformed — caller has no logger; rely on metrics
+			if a.unmarshalErrorHandler != nil {
+				a.unmarshalErrorHandler(msg.Data, err)
+			}
+			return
 		}
 		handler(am)
 	})

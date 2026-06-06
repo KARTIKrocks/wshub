@@ -162,55 +162,68 @@ func New(opts ...Option) *Collector {
 	return c
 }
 
+// IncrementConnections increments both active and total connection counters.
 func (c *Collector) IncrementConnections() {
 	c.connectionsActive.Inc()
 	c.connectionsTotal.Inc()
 }
 
+// DecrementConnections decrements the active connections gauge.
 func (c *Collector) DecrementConnections() {
 	c.connectionsActive.Dec()
 }
 
+// IncrementMessagesReceived increments the counter for messages received from clients.
 func (c *Collector) IncrementMessagesReceived() {
 	c.messagesReceived.Inc()
 }
 
+// IncrementMessagesSent increments the counter for messages sent to clients by the given count.
 func (c *Collector) IncrementMessagesSent(count int) {
 	c.messagesSent.Add(float64(count))
 }
 
+// IncrementMessagesDropped increments the counter for messages dropped due to full send buffers.
 func (c *Collector) IncrementMessagesDropped() {
 	c.messagesDropped.Inc()
 }
 
+// RecordMessageSize adds the given message size to the total bytes received counter.
 func (c *Collector) RecordMessageSize(size int) {
 	c.messageBytes.Add(float64(size))
 }
 
+// RecordLatency observes a message handler processing latency in the histogram.
 func (c *Collector) RecordLatency(duration time.Duration) {
 	c.latency.Observe(duration.Seconds())
 }
 
+// RecordBroadcastDuration observes a broadcast fanout duration in the histogram.
 func (c *Collector) RecordBroadcastDuration(duration time.Duration) {
 	c.broadcastDuration.Observe(duration.Seconds())
 }
 
+// IncrementRoomJoins increments the counter for room join operations.
 func (c *Collector) IncrementRoomJoins() {
 	c.roomJoins.Inc()
 }
 
+// IncrementRoomLeaves increments the counter for room leave operations.
 func (c *Collector) IncrementRoomLeaves() {
 	c.roomLeaves.Inc()
 }
 
+// IncrementRooms increments the active rooms gauge.
 func (c *Collector) IncrementRooms() {
 	c.roomsActive.Inc()
 }
 
+// DecrementRooms decrements the active rooms gauge.
 func (c *Collector) DecrementRooms() {
 	c.roomsActive.Dec()
 }
 
+// IncrementErrors increments the error counter for the given error type.
 func (c *Collector) IncrementErrors(errorType string) {
 	c.errors.WithLabelValues(errorType).Inc()
 }

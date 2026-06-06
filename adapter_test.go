@@ -184,11 +184,19 @@ func readWithTimeout(conn *websocket.Conn, timeout time.Duration) ([]byte, error
 // ---------------------------------------------------------------------------
 
 func TestAdapterBroadcast(t *testing.T) {
-	hubA, _, dialA, dialB := setupHubPair(t)
+	hubA, hubB, dialA, dialB := setupHubPair(t)
 
 	connA := dialA()
 	connB := dialB()
-	time.Sleep(50 * time.Millisecond) // wait for registration
+
+	// Wait for both clients to be registered.
+	deadline := time.Now().Add(time.Second)
+	for hubA.ClientCount() < 1 || hubB.ClientCount() < 1 {
+		if time.Now().After(deadline) {
+			t.Fatal("clients did not register within 1s")
+		}
+		time.Sleep(time.Millisecond)
+	}
 
 	// Broadcast from hub A.
 	hubA.Broadcast([]byte("hello from A"))

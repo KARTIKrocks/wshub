@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/KARTIKrocks/wshub"
@@ -37,11 +38,20 @@ func WithChannel(channel string) Option {
 	}
 }
 
+// WithUnmarshalErrorHandler sets a callback to handle JSON unmarshal errors
+// in the Subscribe callback. If not set, unmarshal errors are silently ignored.
+func WithUnmarshalErrorHandler(handler func(data []byte, err error)) Option {
+	return func(a *Adapter) {
+		a.unmarshalErrorHandler = handler
+	}
+}
+
 // Adapter implements wshub.Adapter using Redis Pub/Sub.
 // It is safe for concurrent use.
 type Adapter struct {
-	client  goredis.UniversalClient
-	channel string
+	client                goredis.UniversalClient
+	channel               string
+	unmarshalErrorHandler func(data []byte, err error)
 
 	mu     sync.Mutex
 	cancel context.CancelFunc
@@ -74,9 +84,12 @@ func (a *Adapter) Publish(ctx context.Context, msg wshub.AdapterMessage) error {
 
 	data, err := json.Marshal(msg)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal message: %w", err)
 	}
-	return a.client.Publish(ctx, a.channel, data).Err()
+	if err := a.client.Publish(ctx, a.channel, data).Err(); err != nil {
+		return fmt.Errorf("publish to channel %s: %w", a.channel, err)
+	}
+	return nil
 }
 
 // Subscribe begins receiving messages from Redis Pub/Sub. The handler is
@@ -109,7 +122,10 @@ func (a *Adapter) Subscribe(ctx context.Context, handler func(wshub.AdapterMessa
 		for msg := range ch {
 			var am wshub.AdapterMessage
 			if err := json.Unmarshal([]byte(msg.Payload), &am); err != nil {
-				continue // skip malformed — caller has no logger; rely on metrics
+				if a.unmarshalErrorHandler != nil {
+					a.unmarshalErrorHandler([]byte(msg.Payload), err)
+				}
+				continue
 			}
 			handler(am)
 		}
@@ -123,15 +139,16 @@ func (a *Adapter) Subscribe(ctx context.Context, handler func(wshub.AdapterMessa
 // caller's responsibility.
 func (a *Adapter) Close() error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	if a.closed {
+		a.mu.Unlock()
 		return nil
 	}
 	a.closed = true
+	cancel := a.cancel
+	a.mu.Unlock()
 
-	if a.cancel != nil {
-		a.cancel()
+	if cancel != nil {
+		cancel()
 	}
 	a.wg.Wait()
 	return nil

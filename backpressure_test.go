@@ -7,6 +7,7 @@ import (
 )
 
 func TestDropNewestDefault(t *testing.T) {
+	t.Parallel()
 	hub := NewHub() // default DropNewest
 
 	client := &Client{
@@ -36,6 +37,7 @@ func TestDropNewestDefault(t *testing.T) {
 }
 
 func TestDropOldest(t *testing.T) {
+	t.Parallel()
 	hub := NewHub(WithDropPolicy(DropOldest))
 
 	client := &Client{
@@ -65,6 +67,7 @@ func TestDropOldest(t *testing.T) {
 }
 
 func TestOnSendDroppedHookFired(t *testing.T) {
+	t.Parallel()
 	var droppedCount atomic.Int32
 	var lastDroppedData atomic.Value
 
@@ -98,6 +101,7 @@ func TestOnSendDroppedHookFired(t *testing.T) {
 }
 
 func TestOnSendDroppedHookFiredForDropOldest(t *testing.T) {
+	t.Parallel()
 	var droppedCount atomic.Int32
 	var lastDroppedData atomic.Value
 
@@ -141,6 +145,7 @@ func TestOnSendDroppedHookFiredForDropOldest(t *testing.T) {
 }
 
 func TestClientSendMessageDropOldest(t *testing.T) {
+	t.Parallel()
 	hub := NewHub(WithDropPolicy(DropOldest))
 
 	client := &Client{
@@ -170,6 +175,7 @@ func TestClientSendMessageDropOldest(t *testing.T) {
 }
 
 func TestOnSendDroppedNilHookNoopPanic(t *testing.T) {
+	t.Parallel()
 	// Verify no panic when OnSendDropped is nil.
 	hub := NewHub()
 
@@ -188,6 +194,7 @@ func TestOnSendDroppedNilHookNoopPanic(t *testing.T) {
 }
 
 func TestDropOldestMultipleOverflows(t *testing.T) {
+	t.Parallel()
 	hub := NewHub(WithDropPolicy(DropOldest))
 
 	client := &Client{
@@ -219,6 +226,7 @@ func TestDropOldestMultipleOverflows(t *testing.T) {
 }
 
 func TestWithDropPolicyOption(t *testing.T) {
+	t.Parallel()
 	hub := NewHub(WithDropPolicy(DropOldest))
 	if hub.dropPolicy != DropOldest {
 		t.Errorf("dropPolicy = %d, want DropOldest(%d)", hub.dropPolicy, DropOldest)
@@ -281,6 +289,7 @@ func TestDropOldestConcurrentSenders(t *testing.T) {
 }
 
 func TestTrySendRecoverOnClosedChannel(t *testing.T) {
+	t.Parallel()
 	// Verify that trySend does not panic when the channel is closed.
 	hub := NewHub()
 
@@ -299,6 +308,7 @@ func TestTrySendRecoverOnClosedChannel(t *testing.T) {
 }
 
 func TestTrySendRecoverDropOldestOnClosedChannel(t *testing.T) {
+	t.Parallel()
 	hub := NewHub(WithDropPolicy(DropOldest))
 
 	client := &Client{
@@ -316,6 +326,7 @@ func TestTrySendRecoverDropOldestOnClosedChannel(t *testing.T) {
 }
 
 func TestSendMessageRecoverOnClosedChannel(t *testing.T) {
+	t.Parallel()
 	hub := NewHub()
 
 	client := &Client{
