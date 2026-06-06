@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-06-06
+
+### Added
+
+- **`WithUnmarshalErrorHandler` option for the NATS and Redis adapters** — register a `func(data []byte, err error)` callback to observe messages that fail JSON unmarshaling in the subscribe path. Previously these were silently dropped; the default behavior is unchanged when no handler is set.
+
+### Fixed
+
+- **Redis adapter `Close()` no longer holds the mutex across `wg.Wait()`** — the lock is released before waiting on in-flight goroutines, removing a potential deadlock if a draining goroutine needs the lock.
+- **NATS adapter `Subscribe` drains any existing subscription before resubscribing** — prevents a subscription/goroutine leak when `Subscribe` is called more than once.
+- **Redis adapter wraps publish/marshal errors with `%w`** — `Publish` now returns `marshal message: …` / `publish to channel <name>: …` with the underlying error preserved for `errors.Is`/`errors.As`.
+
+### Changed
+
+- Test suite reliability: replaced `time.Sleep`-based synchronization in adapter and coverage tests with deterministic polling, converted several tests to table-driven form, and added `t.Parallel()` where safe. The client-readiness helper now waits on `len(hub.Clients())` (the lock-free broadcast snapshot) rather than `hub.ClientCount()` (the atomic counter), which can lead the snapshot during registration.
+- `Makefile`: added `lint-fix` and `fix` convenience targets.
+- Documentation: added doc comments to exported `prometheus.Collector` methods.
+
 ## [1.5.2] - 2026-05-11
 
 ### Fixed
@@ -16,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### deps
 
 - chore: update wshub dependency version to v1.5.0 across modules by @KARTIKrocks in https://github.com/KARTIKrocks/wshub/pull/24
-- test: ensure hubs are ready before returning dial functions in setuubPair by @KARTIKrocks in https://github.com/KARTIKrocks/wshub/pull/25
+- test: ensure hubs are ready before returning dial functions in setupPair by @KARTIKrocks in https://github.com/KARTIKrocks/wshub/pull/25
 - deps: bump github.com/redis/go-redis/v9 from 9.7.3 to 9.18.0 in /adapter/redis by @dependabot[bot] in https://github.com/KARTIKrocks/wshub/pull/20
 - deps: bump github.com/prometheus/client_golang from 1.20.5 to 1.23.2 in /prometheus by @dependabot[bot] in https://github.com/KARTIKrocks/wshub/pull/23
 - deps: bump github.com/nats-io/nats.go from 1.39.1 to 1.50.0 in /adapter/nats by @dependabot[bot] in https://github.com/KARTIKrocks/wshub/pull/21

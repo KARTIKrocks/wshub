@@ -1,7 +1,7 @@
 GOLANGCI_LINT_VERSION := v2.12.2
 GOIMPORTS_VERSION := v0.45.0
 
-.PHONY: all setup deps test test-v test-prometheus vet lint build bench fuzz fmt cover clean ci loadtest
+.PHONY: all setup deps test test-v test-prometheus vet lint lint-fix fix build bench fuzz fmt cover clean ci loadtest
 
 all: fmt vet lint test test-prometheus build
 

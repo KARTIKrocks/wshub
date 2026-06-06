@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -26,14 +27,7 @@ func mockClient(hub *Hub) *Client {
 	return c
 }
 
-var clientSeq atomicInt64
-
-type atomicInt64 struct{ v int64 }
-
-func (a *atomicInt64) Add(n int64) int64 {
-	a.v += n
-	return a.v
-}
+var clientSeq atomic.Int64
 
 // drainClient reads all messages from a client's send channel.
 func drainClient(c *Client) {
@@ -305,6 +299,8 @@ func BenchmarkClientSend(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = c.Send(data)
 	}
+	b.StopTimer()
+	close(c.send)
 	hub.mu.Lock()
 	delete(hub.clients, c)
 	hub.mu.Unlock()
@@ -324,6 +320,8 @@ func BenchmarkClientSendJSON(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = c.SendJSON(payload)
 	}
+	b.StopTimer()
+	close(c.send)
 	hub.mu.Lock()
 	delete(hub.clients, c)
 	hub.mu.Unlock()

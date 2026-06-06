@@ -7,11 +7,13 @@ import (
 )
 
 func TestAdapterImplementsInterface(t *testing.T) {
+	t.Parallel()
 	// Compile-time check that *Adapter satisfies wshub.Adapter.
 	var _ wshub.Adapter = (*Adapter)(nil)
 }
 
 func TestWithChannel(t *testing.T) {
+	t.Parallel()
 	a := &Adapter{channel: defaultChannel}
 	WithChannel("custom:chan")(a)
 	if a.channel != "custom:chan" {
@@ -20,6 +22,7 @@ func TestWithChannel(t *testing.T) {
 }
 
 func TestWithChannelEmpty(t *testing.T) {
+	t.Parallel()
 	a := &Adapter{channel: defaultChannel}
 	WithChannel("")(a)
 	if a.channel != defaultChannel {
@@ -28,6 +31,7 @@ func TestWithChannelEmpty(t *testing.T) {
 }
 
 func TestCloseIdempotent(t *testing.T) {
+	t.Parallel()
 	a := New(nil) // nil client is fine — Close doesn't touch it.
 	if err := a.Close(); err != nil {
 		t.Fatalf("first close: %v", err)
@@ -38,6 +42,7 @@ func TestCloseIdempotent(t *testing.T) {
 }
 
 func TestNewDefaults(t *testing.T) {
+	t.Parallel()
 	// Verify New sets correct defaults without panicking.
 	// A real integration test requires a running Redis instance.
 	a := New(nil) // nil client is fine for construction.
