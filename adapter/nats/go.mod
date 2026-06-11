@@ -3,7 +3,7 @@ module github.com/KARTIKrocks/wshub/adapter/nats
 go 1.25.0
 
 require (
-	github.com/KARTIKrocks/wshub v1.5.2
+	github.com/KARTIKrocks/wshub v1.6.0
 	github.com/nats-io/nats.go v1.52.0
 )
 
