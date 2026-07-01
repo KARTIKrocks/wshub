@@ -79,3 +79,23 @@ make cover            # coverage report -> coverage.html
 
 - `examples/` — runnable examples (simple, chat, auth, metrics, multinode).
 - `cmd/loadtest/` — real-WebSocket load generator: `make loadtest LOADTEST_ARGS="-scenario=fanout -clients=10000"`.
+
+## Documentation website
+
+The docs site is **not on `main`** — it lives on the separate **`website`** branch
+under `wshub-website/` (React 19 + Vite 7 + TypeScript + Tailwind v4 + Shiki). It is
+built and published to GitHub Pages (the `gh-pages` branch) with `npm run deploy`,
+served under the `/wshub/` base path.
+
+The site is **version-aware**: it fetches releases from the GitHub API and renders
+docs for the selected version. Two things must be kept in sync when the library
+changes:
+
+- **New release** — bump `LATEST_VERSION` in `src/components/VersionProvider.tsx`.
+- **Public API change** — update the matching topic file in `src/content/*.tsx`
+  (one per subsystem: `hub`, `client`, `rooms`, `adapter`, `presence`, etc.). New
+  features that only exist from a given version are gated in `src/App.tsx` via
+  `minVersion('vX.Y.Z')`, so add the gate there when a doc section is version-specific.
+
+When you change the **public API** on `main`, mirror the change on the `website`
+branch so the published docs don't drift.
