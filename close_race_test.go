@@ -41,7 +41,7 @@ func TestCloseWithCodeDoesNotRaceWithSenders(t *testing.T) {
 
 	const clients = 8
 	conns := make([]*websocket.Conn, 0, clients)
-	for i := 0; i < clients; i++ {
+	for range clients {
 		conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
 		if err != nil {
 			t.Fatalf("dial: %v", err)
@@ -54,37 +54,51 @@ func TestCloseWithCodeDoesNotRaceWithSenders(t *testing.T) {
 		}
 	})
 
-	// The clients never read, so every send buffer fills and the drop path — the
-	// one that races with the close — runs hot.
-	deadline := time.Now().Add(2 * time.Second)
-	for hub.RoomCount("room") != clients && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
-	}
-	if got := hub.RoomCount("room"); got != clients {
-		t.Fatalf("joined %d clients, want %d", got, clients)
-	}
+	waitFor(t, 2*time.Second, func() bool {
+		return hub.RoomCount("room") == clients
+	}, "all clients to join the room")
 
 	payload := make([]byte, 4<<10)
 	var wg sync.WaitGroup
 
-	// Broadcast hard...
+	// Broadcast hard. The clients never read, so every send buffer fills and the
+	// DropOldest evict/enqueue path — the one that races with the close — runs hot.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 2000; i++ {
+		for range 2000 {
 			_ = hub.BroadcastToRoom("room", payload)
 		}
 	}()
 
-	// ...while closing the clients underneath the broadcaster.
+	// ...and close the clients underneath the broadcaster, but only once the send
+	// buffers have actually backed up, so the close lands while senders are in
+	// flight rather than before the broadcast has ramped up. Poll rather than
+	// assert: this goroutine is not the test goroutine, so it must not call
+	// t.Fatal, and a timeout here only makes the race window less likely to open,
+	// never the test flaky.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		time.Sleep(20 * time.Millisecond)
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) && !anyBufferFull(hub.RoomClients("room")) {
+			time.Sleep(time.Millisecond)
+		}
 		for _, c := range hub.RoomClients("room") {
 			_ = c.CloseWithCode(1013, "too slow")
 		}
 	}()
 
 	wg.Wait()
+}
+
+// anyBufferFull reports whether any client's send buffer has backed up, i.e.
+// the broadcaster has reached the drop path.
+func anyBufferFull(clients []*Client) bool {
+	for _, c := range clients {
+		if len(c.send) == cap(c.send) {
+			return true
+		}
+	}
+	return false
 }
