@@ -1008,8 +1008,8 @@ func waitForClient(t *testing.T, hub *Hub) *Client {
 
 // TestWritePumpExitsOnCloseWithCode verifies that calling CloseWithCode
 // drives writePump to send a close frame and exit. With ctx.Done() removed
-// from the writePump select, the path is: CloseWithCode → close(c.send) →
-// writePump observes ok=false → writeCloseFrame → return.
+// from the writePump select, the path is: CloseWithCode → closeDone() with
+// graceful set → writePump observes c.done → drainQueued → writeCloseFrame.
 func TestWritePumpExitsOnCloseWithCode(t *testing.T) {
 	hub, dial := setupClientTest(t)
 	conn := dial()
@@ -1056,8 +1056,8 @@ func TestWritePumpExitsOnRemoteClose(t *testing.T) {
 
 // TestWritePumpExitsOnHubShutdown verifies that hub.Shutdown drives every
 // active writePump to exit. With ctx.Done() removed from writePump, the
-// path is: Run sees h.ctx.Done() → calls client.Close() on each → close(c.send)
-// → writePump exits via the send case with ok=false.
+// path is: Run sees h.ctx.Done() → calls client.Close() on each → closeDone()
+// with graceful set → writePump exits via the done case, sending a close frame.
 func TestWritePumpExitsOnHubShutdown(t *testing.T) {
 	hub := NewHub()
 	go hub.Run()
@@ -1100,8 +1100,8 @@ func TestWritePumpExitsOnHubShutdown(t *testing.T) {
 // TestWritePumpDeliversBufferedSendsBeforeClose verifies that messages
 // already queued in c.send are delivered before writePump exits when
 // CloseWithCode runs. The drainQueued path inside writePump is responsible
-// for this; with ctx.Done() removed, the only exit signal is c.send being
-// closed, which now happens AFTER buffered items are written.
+// for this: the graceful done signal flushes whatever is buffered before the
+// close frame goes out.
 func TestWritePumpDeliversBufferedSendsBeforeClose(t *testing.T) {
 	hub, dial := setupClientTest(t)
 	conn := dial()

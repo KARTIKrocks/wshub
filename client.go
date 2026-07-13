@@ -49,12 +49,17 @@ type Client struct {
 	closeCode   int
 	closeReason string
 
+	// graceful records that this close came from CloseWithCode, which wants the
+	// queued messages flushed and a close frame sent. An unregister (remote or
+	// abnormal close) leaves it false and writePump exits immediately.
+	graceful bool
+
 	// Close-once guard
 	closeOnce sync.Once
 
-	// done is closed to signal writePump to exit when the client is
-	// unregistered (remote/abnormal close). CloseWithCode uses
-	// close(c.send) instead, so writePump can send the close frame.
+	// done is closed to signal writePump to stop. Both CloseWithCode and
+	// handleUnregister signal through it; graceful tells them apart. Nothing ever
+	// closes c.send — see CloseWithCode.
 	done     chan struct{}
 	doneOnce sync.Once
 
@@ -229,9 +234,9 @@ func (c *Client) SendMessageWithContext(ctx context.Context, msgType MessageType
 	}
 	c.mu.RUnlock()
 
-	// Recover from sending on a closed channel if the client disconnects
-	// concurrently (CloseWithCode closes c.send). Re-panic on anything else
-	// so that real bugs are not silently swallowed.
+	// Belt-and-braces: nothing closes c.send (CloseWithCode signals done instead),
+	// so this should be unreachable. Re-panic on anything else so that real bugs
+	// are not silently swallowed.
 	defer func() {
 		if r := recover(); r != nil {
 			if isChanSendPanic(r) {
@@ -269,15 +274,29 @@ func (c *Client) CloseWithCode(code int, reason string) error {
 	c.closedAt = time.Now()
 	c.closeCode = code
 	c.closeReason = reason
+	c.graceful = true
 	c.mu.Unlock()
 
-	// Closing the send channel signals writePump to send the close frame
-	// and exit. writePump and readPump both call closeConn() in their
-	// defers, so the underlying connection is always cleaned up.
-	// We must NOT call closeConn() here — doing so would race with
-	// writePump trying to send the close frame.
-	close(c.send)
+	// Signal writePump through done, which flushes what is queued and sends the
+	// close frame (see writePump). writePump and readPump both call closeConn()
+	// in their defers, so the connection is always cleaned up. We must NOT call
+	// closeConn() here — that would race with writePump writing the close frame.
+	//
+	// This used to be close(c.send). It must not be: producers send on that
+	// channel without holding any lock the closer also holds — the fast path and
+	// the DropOldest evict/enqueue loop in Hub.trySendErr, and
+	// SendMessageWithContext — and closing a channel concurrently with a send on
+	// it is a data race, whatever recover() does about the panic afterwards. It is
+	// the same reason handleUnregister drains the buffer instead of closing it.
+	c.closeDone()
 	return nil
+}
+
+// isGraceful reports whether the close came from CloseWithCode.
+func (c *Client) isGraceful() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.graceful
 }
 
 // closeDone signals writePump to exit by closing the done channel.
@@ -505,11 +524,21 @@ func (c *Client) processMessage(messageType int, data []byte) {
 }
 
 // writeCloseFrame sends a WebSocket close frame with the client's close code
-// and reason. Called by writePump when the send channel is closed.
+// and reason. Called by writePump on a graceful close.
+//
+// It sets its own write deadline: the graceful path reaches here through
+// drainQueued, which returns without setting one when the queue is empty. A
+// peer that has stopped reading would otherwise block this write — and with it
+// writePump, whose deferred closeConn is what tears the connection down.
 func (c *Client) writeCloseFrame() {
 	c.mu.RLock()
 	code, reason := c.closeCode, c.closeReason
 	c.mu.RUnlock()
+
+	if err := c.conn.SetWriteDeadline(time.Now().Add(c.config.WriteWait)); err != nil {
+		c.hub.metrics.IncrementErrors("write_deadline_error")
+		return
+	}
 
 	var msg []byte
 	if code != 0 {
@@ -519,8 +548,7 @@ func (c *Client) writeCloseFrame() {
 }
 
 // drainQueued writes any messages buffered in the send channel.
-// Returns false if the send channel was closed or a write error
-// occurred, signalling writePump to exit.
+// Returns false if a write error occurred, signalling writePump to exit.
 func (c *Client) drainQueued() bool {
 	n := len(c.send)
 	if n == 0 {
@@ -533,10 +561,7 @@ func (c *Client) drainQueued() bool {
 	}
 	for range n {
 		select {
-		case queued, ok := <-c.send:
-			if !ok {
-				return false
-			}
+		case queued := <-c.send:
 			if err := c.conn.WriteMessage(queued.msgType, queued.data); err != nil {
 				c.hub.metrics.IncrementErrors("write_error")
 				return false
@@ -552,7 +577,7 @@ func (c *Client) drainQueued() bool {
 // drainQueuedCoalesced writes the first item and any queued items,
 // coalescing consecutive text messages into a single WebSocket frame
 // separated by newline bytes. Non-text messages are written individually.
-// Returns false if the send channel was closed or a write error occurred.
+// Returns false if a write error occurred.
 func (c *Client) drainQueuedCoalesced(first sendItem) bool {
 	n := len(c.send)
 
@@ -595,11 +620,7 @@ func (c *Client) writeCoalescedBatch(first sendItem, n int) bool {
 
 	for range n {
 		select {
-		case queued, ok := <-c.send:
-			if !ok {
-				_ = w.Close()
-				return false
-			}
+		case queued := <-c.send:
 			if queued.msgType == websocket.TextMessage {
 				if _, err := w.Write([]byte{'\n'}); err != nil {
 					c.hub.metrics.IncrementErrors("write_error")
@@ -644,17 +665,20 @@ func (c *Client) writeCoalescedBatch(first sendItem, n int) bool {
 
 // writePump pumps messages from the hub to the WebSocket connection.
 //
-// Shutdown signals (in priority order):
-//   - CloseWithCode → closes c.send → exits via the send case with ok=false,
-//     sending a close frame.
-//   - handleUnregister (remote/abnormal close) → closes c.done → exits without
-//     a close frame (the connection is already gone).
+// Every shutdown path signals through c.done; c.graceful says which one it was:
+//   - CloseWithCode → done + graceful → flush the queued messages, then send a
+//     close frame.
+//   - handleUnregister (remote/abnormal close) → done, not graceful → exit
+//     without a close frame (the connection is already gone).
 //   - hub.Shutdown → calls Close on each client → same path as CloseWithCode.
 //
-// We deliberately do NOT select on the hub's context. Hub shutdown closes
-// every client's send channel, which already wakes the pump; adding a fourth
-// select case measurably increases per-iteration cost (selectgo grows roughly
-// linearly with case count) without changing correctness.
+// Nothing ever closes c.send: producers send on it without holding any lock a
+// closer could take, so closing it would race with them (see CloseWithCode).
+//
+// We deliberately do NOT select on the hub's context. Hub shutdown already
+// wakes the pump through done; adding a fourth select case measurably increases
+// per-iteration cost (selectgo grows roughly linearly with case count) without
+// changing correctness.
 func (c *Client) writePump() {
 	ticker := time.NewTicker(c.config.PingPeriod)
 	defer func() {
@@ -665,17 +689,21 @@ func (c *Client) writePump() {
 	for {
 		select {
 		case <-c.done:
-			// Client was unregistered (remote/abnormal close). Exit
-			// without sending a close frame — the connection is gone.
-			return
-
-		case item, ok := <-c.send:
-			if err := c.conn.SetWriteDeadline(time.Now().Add(c.config.WriteWait)); err != nil {
-				c.hub.metrics.IncrementErrors("write_deadline_error")
+			// A graceful CloseWithCode: flush what is already queued, then send
+			// the close frame — the behaviour callers had when this was signalled
+			// by closing c.send.
+			if c.isGraceful() {
+				_ = c.drainQueued()
+				c.writeCloseFrame()
 				return
 			}
-			if !ok {
-				c.writeCloseFrame()
+			// Otherwise the client was unregistered (remote/abnormal close):
+			// exit without a close frame, the connection is already gone.
+			return
+
+		case item := <-c.send:
+			if err := c.conn.SetWriteDeadline(time.Now().Add(c.config.WriteWait)); err != nil {
+				c.hub.metrics.IncrementErrors("write_deadline_error")
 				return
 			}
 			if c.config.CoalesceWrites {

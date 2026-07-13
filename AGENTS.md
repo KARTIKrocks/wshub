@@ -66,6 +66,13 @@ make cover            # coverage report -> coverage.html
 - **All exported types and functions must have doc comments.**
 - Keep the hot path zero-allocation — benchmarks in `benchmark_test.go` guard
   dispatch performance. Verify with `make bench` if you touch dispatch/send code.
+- **Never `close(client.send)` in library code.** Producers (`Hub.trySendErr`,
+  `Client.SendMessageWithContext`) send on that channel without holding any lock
+  a closer could take, so closing it races with them. Shutdown is signalled
+  through `client.done` instead — `CloseWithCode` sets `graceful` so `writePump`
+  flushes the queue and sends a close frame; `handleUnregister` drains the
+  buffer. Tests may close `send` on a bare `&Client{}` with no `writePump`
+  running to exercise the recover guards.
 - Keep test coverage high; add tests alongside new functionality.
 - Update `README.md` / `doc.go` when the **public API** changes, and add a
   `CHANGELOG.md` entry for user-facing changes.

@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-07-13
+
+### Fixed
+
+- **Data race between `Client.CloseWithCode` and concurrent broadcasts** — `CloseWithCode` closed the client's `send` channel while producers were still sending on it (`Hub.trySendErr`'s fast path, the `DropOldest` evict/enqueue loop, and `SendMessageWithContext`), none of which hold a lock the closer takes. Closing a channel concurrently with a send on it is a data race; the `recover()` guard around the send only hid the panic that followed. Race-enabled builds under `DropOldest` could report `WARNING: DATA RACE` between `closechan` and `chansend` within a few hundred broadcast messages.
+
+  `CloseWithCode` now signals `writePump` through the existing `done` channel and flags the close as graceful, so queued messages are still flushed and the WebSocket close frame is still sent. Nothing closes `send` any more — `handleUnregister` continues to drain it. No API change; behavior is unchanged except that the race is gone.
+
 ## [1.6.0] - 2026-06-06
 
 ### Added

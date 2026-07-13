@@ -604,11 +604,9 @@ func (h *Hub) handleUnregister(client *Client) {
 	}
 
 	// Mark the client as closed so IsClosed() returns the correct value
-	// and SendMessage short-circuits. Track whether CloseWithCode already
-	// closed the send channel so we can skip the drain below.
+	// and SendMessage short-circuits.
 	client.mu.Lock()
-	sendChanClosed := client.closed
-	if !sendChanClosed {
+	if !client.closed {
 		client.closed = true
 		client.closedAt = time.Now()
 	}
@@ -619,22 +617,18 @@ func (h *Hub) handleUnregister(client *Client) {
 	client.closeDone()
 	client.closeConn()
 
-	// Drain any messages left in the send buffer to free memory
-	// immediately rather than waiting for GC. We drain instead of
-	// close(client.send) to avoid a data race with concurrent senders
-	// in trySendErr that have already passed the closed check.
-	//
-	// Skip when CloseWithCode already closed the channel — receiving
-	// from a closed channel always succeeds with the zero value, which
-	// would spin this loop forever and hang the Run goroutine.
-	if !sendChanClosed {
-	drain:
-		for {
-			select {
-			case <-client.send:
-			default:
-				break drain
-			}
+	// Drain any messages left in the send buffer to free memory immediately
+	// rather than waiting for GC. We drain instead of close(client.send) to
+	// avoid a data race with concurrent senders in trySendErr that have already
+	// passed the closed check. Nothing closes the channel — CloseWithCode
+	// signals writePump through done — so this always runs and always
+	// terminates.
+drain:
+	for {
+		select {
+		case <-client.send:
+		default:
+			break drain
 		}
 	}
 
