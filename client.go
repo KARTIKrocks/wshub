@@ -525,10 +525,20 @@ func (c *Client) processMessage(messageType int, data []byte) {
 
 // writeCloseFrame sends a WebSocket close frame with the client's close code
 // and reason. Called by writePump on a graceful close.
+//
+// It sets its own write deadline: the graceful path reaches here through
+// drainQueued, which returns without setting one when the queue is empty. A
+// peer that has stopped reading would otherwise block this write — and with it
+// writePump, whose deferred closeConn is what tears the connection down.
 func (c *Client) writeCloseFrame() {
 	c.mu.RLock()
 	code, reason := c.closeCode, c.closeReason
 	c.mu.RUnlock()
+
+	if err := c.conn.SetWriteDeadline(time.Now().Add(c.config.WriteWait)); err != nil {
+		c.hub.metrics.IncrementErrors("write_deadline_error")
+		return
+	}
 
 	var msg []byte
 	if code != 0 {
