@@ -114,6 +114,12 @@ func (a *Adapter) Subscribe(ctx context.Context, handler func(wshub.AdapterMessa
 	// them and leaves Close blocked on wg.Wait forever.
 	prev := a.cancel
 	a.cancel = cancel
+	// Reserve the two goroutine slots while still holding the lock. Adding to
+	// a WaitGroup whose counter is zero must happen before any Wait on it, and
+	// Close's Wait can otherwise start between this call's closed check and the
+	// go statements below — leaving Close to return while both goroutines are
+	// still starting up.
+	a.wg.Add(2)
 	a.mu.Unlock()
 
 	if prev != nil {
@@ -126,6 +132,8 @@ func (a *Adapter) Subscribe(ctx context.Context, handler func(wshub.AdapterMessa
 	if _, err := sub.Receive(ctx); err != nil {
 		_ = sub.Close()
 		cancel()
+		// Release the slots reserved above; neither goroutine will start.
+		a.wg.Add(-2)
 		return err
 	}
 
@@ -135,14 +143,12 @@ func (a *Adapter) Subscribe(ctx context.Context, handler func(wshub.AdapterMessa
 	// which never happens. go-redis does not tie the PubSub's lifetime to the
 	// context passed to Subscribe, so this watcher is also what makes context
 	// cancellation stop delivery.
-	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
 		<-ctx.Done()
 		_ = sub.Close()
 	}()
 
-	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
 

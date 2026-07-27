@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sync"
+	"sync/atomic"
 
 	"github.com/KARTIKrocks/wshub"
 	gonats "github.com/nats-io/nats.go"
@@ -46,6 +47,34 @@ func WithUnmarshalErrorHandler(handler func(data []byte, err error)) Option {
 	}
 }
 
+// subscription bundles a NATS subscription with the signals used to tear it
+// down exactly once. Draining is guarded by a sync.Once because two paths can
+// reach it — the context watcher and Close — and NATS reports an error when
+// the same subscription is drained twice.
+type subscription struct {
+	sub  *gonats.Subscription
+	stop chan struct{} // closed to release the watcher without draining
+	done chan struct{} // closed when the watcher has exited
+
+	stopOnce  sync.Once
+	drainOnce sync.Once
+	drainErr  error
+}
+
+// release signals the watcher to exit and waits for it, so a caller that has
+// taken ownership of this subscription knows no goroutine is still using it.
+func (s *subscription) release() {
+	s.stopOnce.Do(func() { close(s.stop) })
+	<-s.done
+}
+
+// drain drains the underlying subscription at most once, returning the result
+// of that single call to every caller.
+func (s *subscription) drain() error {
+	s.drainOnce.Do(func() { s.drainErr = s.sub.Drain() })
+	return s.drainErr
+}
+
 // Adapter implements wshub.Adapter using NATS core Pub/Sub.
 // It is safe for concurrent use.
 type Adapter struct {
@@ -54,13 +83,17 @@ type Adapter struct {
 	unmarshalErrorHandler func(data []byte, err error)
 
 	mu     sync.Mutex
-	sub    *gonats.Subscription
+	cur    *subscription
 	closed bool
 
-	// stop releases the context-watcher goroutine started by Subscribe when
-	// the subscription is torn down by Close rather than by cancellation.
-	// Closed and cleared under mu, so it is closed at most once.
-	stop chan struct{}
+	// gen increments on every Subscribe. A call that finds the generation
+	// changed while it was subscribing has been superseded and must not
+	// install its subscription.
+	gen uint64
+
+	// watchers counts live watcher goroutines for this adapter. Only tests
+	// read it; it is per-adapter so it stays exact under parallel tests.
+	watchers atomic.Int64
 }
 
 // New creates a new NATS adapter. The provided connection must already be
@@ -106,22 +139,26 @@ func (a *Adapter) Publish(ctx context.Context, msg wshub.AdapterMessage) error {
 // the previous subscription, which is drained first. Subscribe returns
 // ErrClosed if the adapter is closed.
 func (a *Adapter) Subscribe(ctx context.Context, handler func(wshub.AdapterMessage)) error {
-	// Drain any existing subscription, and release its watcher, to prevent
-	// a leak when Subscribe is called more than once.
+	// Take ownership of any existing subscription and claim a generation, so a
+	// concurrent Subscribe or Close can be detected once the (unlocked)
+	// conn.Subscribe below returns.
 	a.mu.Lock()
 	if a.closed {
 		a.mu.Unlock()
 		return ErrClosed
 	}
-	if a.sub != nil {
-		_ = a.sub.Drain()
-		a.sub = nil
-	}
-	if a.stop != nil {
-		close(a.stop)
-		a.stop = nil
-	}
+	a.gen++
+	myGen := a.gen
+	prev := a.cur
+	a.cur = nil
 	a.mu.Unlock()
+
+	// Release the previous subscription outside the lock: release waits for
+	// its watcher, which must not block on a mutex this call holds.
+	if prev != nil {
+		prev.release()
+		_ = prev.drain()
+	}
 
 	sub, err := a.conn.Subscribe(a.subject, func(msg *gonats.Msg) {
 		var am wshub.AdapterMessage
@@ -137,23 +174,43 @@ func (a *Adapter) Subscribe(ctx context.Context, handler func(wshub.AdapterMessa
 		return err
 	}
 
-	stop := make(chan struct{})
+	s := &subscription{
+		sub:  sub,
+		stop: make(chan struct{}),
+		done: make(chan struct{}),
+	}
 
+	// conn.Subscribe ran without the lock, so the adapter may have been closed
+	// or superseded in the meantime. Installing unconditionally would leave a
+	// live subscription on a closed adapter with a watcher nothing releases.
 	a.mu.Lock()
-	a.sub = sub
-	a.stop = stop
+	if a.closed {
+		a.mu.Unlock()
+		_ = s.drain()
+		return ErrClosed
+	}
+	if a.gen != myGen {
+		a.mu.Unlock()
+		// A later Subscribe already replaced this one; it never becomes
+		// visible, so drain it here rather than installing it.
+		return s.drain()
+	}
+	a.cur = s
+	a.watchers.Add(1)
 	a.mu.Unlock()
 
 	// Watch for context cancellation and drain the subscription. Callers
 	// commonly pass a context that is never cancelled and tear down via Close
 	// instead, so this goroutine must also exit on stop — otherwise it lives
-	// for the life of the process. Exactly one of the two paths drains: on
-	// stop, Close owns the drain and reports its error.
+	// for the life of the process. Draining is once-guarded, so it does not
+	// matter which path gets there first.
 	go func() {
+		defer close(s.done)
+		defer a.watchers.Add(-1)
 		select {
 		case <-ctx.Done():
-			_ = sub.Drain()
-		case <-stop:
+			_ = s.drain()
+		case <-s.stop:
 		}
 	}()
 
@@ -162,22 +219,24 @@ func (a *Adapter) Subscribe(ctx context.Context, handler func(wshub.AdapterMessa
 
 // Close unsubscribes and releases resources. It does not close the
 // underlying NATS connection — that remains the caller's responsibility.
+// Close returns once the subscription's watcher goroutine has exited, so no
+// goroutine started by Subscribe outlives it.
 func (a *Adapter) Close() error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	if a.closed {
+		a.mu.Unlock()
 		return nil
 	}
 	a.closed = true
+	cur := a.cur
+	a.cur = nil
+	a.mu.Unlock()
 
-	if a.stop != nil {
-		close(a.stop)
-		a.stop = nil
+	if cur == nil {
+		return nil
 	}
-
-	if a.sub != nil {
-		return a.sub.Drain()
-	}
-	return nil
+	// Outside the lock: release waits for the watcher, which must not block
+	// on a mutex this call holds.
+	cur.release()
+	return cur.drain()
 }

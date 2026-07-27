@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -335,23 +337,29 @@ func TestResubscribeReplacesPreviousSubscription(t *testing.T) {
 	}
 	assertSameMessage(t, second.next(t), want)
 
-	// The replaced subscription must not still be receiving.
-	drainCollector(first)
-	if err := a.Publish(context.Background(), want); err != nil {
-		t.Fatalf("Publish: %v", err)
-	}
-	second.next(t)
-	first.expectQuiet(t)
+	// The replaced subscription must stop receiving. Its teardown is
+	// asynchronous, so poll until it goes quiet rather than checking once.
+	waitForSilence(t, first, a)
 }
 
-func drainCollector(c *collector) {
-	for {
+// waitForSilence polls until published messages stop reaching c, failing if
+// delivery continues past recvTimeout.
+func waitForSilence(t *testing.T, c *collector, publisher *Adapter) {
+	t.Helper()
+
+	deadline := time.Now().Add(recvTimeout)
+	for time.Now().Before(deadline) {
+		if err := publisher.Publish(context.Background(), sampleMessage()); err != nil {
+			t.Fatalf("Publish: %v", err)
+		}
 		select {
 		case <-c.ch:
-		default:
-			return
+			// Still delivering — keep polling immediately.
+		case <-time.After(quietPeriod):
+			return // delivery stopped
 		}
 	}
+	t.Fatal("delivery continued after the subscription was replaced or stopped")
 }
 
 // Publish reports ErrClosed after Close, so Subscribe must too rather than
@@ -379,6 +387,7 @@ func TestCloseStopsDelivery(t *testing.T) {
 	client := newRedis(t)
 
 	sub := New(client)
+	t.Cleanup(func() { _ = sub.Close() })
 	c := subscribed(t, sub)
 
 	// Confirm delivery works before closing, so a later silence is
@@ -425,22 +434,7 @@ func TestContextCancellationStopsDelivery(t *testing.T) {
 	c.next(t)
 
 	cancel()
-
-	// Wait for the subscriber goroutine to observe the cancellation.
-	deadline := time.Now().Add(recvTimeout)
-	for time.Now().Before(deadline) {
-		if err := publisher.Publish(context.Background(), sampleMessage()); err != nil {
-			t.Fatalf("Publish: %v", err)
-		}
-		select {
-		case <-c.ch:
-			time.Sleep(10 * time.Millisecond)
-			continue
-		case <-time.After(quietPeriod):
-			return // delivery stopped
-		}
-	}
-	t.Fatal("delivery continued after the subscription context was cancelled")
+	waitForSilence(t, c, publisher)
 }
 
 // Close is documented as idempotent and must stay safe under concurrent calls.
@@ -479,6 +473,11 @@ func TestConcurrentPublish(t *testing.T) {
 	t.Cleanup(func() { _ = publisher.Close() })
 
 	const publishers = 16
+	want := make(map[string]struct{}, publishers)
+	for i := range publishers {
+		want[string(rune('a'+i))] = struct{}{}
+	}
+
 	var wg sync.WaitGroup
 	for i := range publishers {
 		wg.Add(1)
@@ -493,7 +492,25 @@ func TestConcurrentPublish(t *testing.T) {
 	}
 	wg.Wait()
 
+	got := make(map[string]struct{}, publishers)
 	for range publishers {
-		c.next(t)
+		msg := c.next(t)
+		if _, dup := got[msg.ClientID]; dup {
+			t.Errorf("ClientID %q delivered more than once", msg.ClientID)
+		}
+		got[msg.ClientID] = struct{}{}
 	}
+
+	if !maps.Equal(got, want) {
+		t.Errorf("delivered ClientIDs = %v, want %v", keys(got), keys(want))
+	}
+}
+
+func keys(m map[string]struct{}) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

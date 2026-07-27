@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -270,6 +269,7 @@ func TestPublishAfterCloseReturnsErrClosed(t *testing.T) {
 
 	conn := newNATS(t)
 	a := New(conn)
+	t.Cleanup(func() { _ = a.Close() })
 
 	if err := a.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -301,6 +301,7 @@ func TestCloseStopsDelivery(t *testing.T) {
 	conn := newNATS(t)
 
 	sub := New(conn)
+	t.Cleanup(func() { _ = sub.Close() })
 	c := subscribed(t, conn, sub)
 
 	publisher := New(conn)
@@ -370,7 +371,7 @@ func waitForSilence(t *testing.T, c *collector, publisher *Adapter) {
 		}
 		select {
 		case <-c.ch:
-			time.Sleep(10 * time.Millisecond)
+			// Still delivering — keep polling immediately.
 		case <-time.After(quietPeriod):
 			return // delivery stopped
 		}
@@ -428,6 +429,7 @@ func TestSubscribeAfterCloseReturnsErrClosed(t *testing.T) {
 
 	conn := newNATS(t)
 	a := New(conn)
+	t.Cleanup(func() { _ = a.Close() })
 
 	if err := a.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -445,6 +447,7 @@ func TestCloseReturnsAfterRepeatedSubscribe(t *testing.T) {
 
 	conn := newNATS(t)
 	a := New(conn)
+	t.Cleanup(func() { _ = a.Close() })
 
 	for i := range 3 {
 		if err := a.Subscribe(context.Background(), func(wshub.AdapterMessage) {}); err != nil {
@@ -466,33 +469,70 @@ func TestCloseReturnsAfterRepeatedSubscribe(t *testing.T) {
 }
 
 // Close must release the goroutine Subscribe spawns to watch the context,
-// even when that context is never cancelled by the caller.
+// even when that context is never cancelled by the caller. Close waits for
+// that goroutine, so this asserts on the adapter's own watcher count rather
+// than runtime.NumGoroutine, which is process-wide and would be perturbed by
+// any other test running in parallel.
 func TestCloseReleasesWatcherGoroutine(t *testing.T) {
+	t.Parallel()
+
 	conn := newNATS(t)
-
-	baseline := runtime.NumGoroutine()
-
 	a := New(conn)
+	t.Cleanup(func() { _ = a.Close() })
+
 	if err := a.Subscribe(context.Background(), func(wshub.AdapterMessage) {}); err != nil {
 		t.Fatalf("Subscribe: %v", err)
 	}
 	if err := conn.Flush(); err != nil {
 		t.Fatalf("Flush: %v", err)
 	}
+	if got := a.watchers.Load(); got != 1 {
+		t.Fatalf("watchers = %d after Subscribe, want 1", got)
+	}
+
 	if err := a.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-
-	// Poll rather than sleep — goroutine teardown is asynchronous.
-	deadline := time.Now().Add(recvTimeout)
-	for time.Now().Before(deadline) {
-		if runtime.NumGoroutine() <= baseline {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+	if got := a.watchers.Load(); got != 0 {
+		t.Errorf("watchers = %d after Close, want 0 — the context watcher leaked", got)
 	}
-	t.Errorf("goroutines = %d, want <= %d after Close — the context watcher leaked",
-		runtime.NumGoroutine(), baseline)
+}
+
+// Close concurrent with Subscribe must not leave a live subscription on a
+// closed adapter. conn.Subscribe runs without the adapter lock, so a naive
+// implementation installs its result unconditionally and strands a watcher
+// that nothing will ever release.
+func TestConcurrentSubscribeAndClose(t *testing.T) {
+	t.Parallel()
+
+	for i := range 200 {
+		conn := newNATS(t)
+		a := New(conn)
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			_ = a.Subscribe(context.Background(), func(wshub.AdapterMessage) {})
+		}()
+		go func() {
+			defer wg.Done()
+			_ = a.Close()
+		}()
+		wg.Wait()
+
+		a.mu.Lock()
+		cur := a.cur
+		closed := a.closed
+		a.mu.Unlock()
+
+		if closed && cur != nil {
+			t.Fatalf("iteration %d: subscription installed on a closed adapter", i)
+		}
+		if got := a.watchers.Load(); got != 0 {
+			t.Fatalf("iteration %d: watchers = %d after Close, want 0", i, got)
+		}
+	}
 }
 
 // Close is documented as idempotent and must stay safe under concurrent calls.
@@ -501,6 +541,7 @@ func TestCloseIsConcurrencySafe(t *testing.T) {
 
 	conn := newNATS(t)
 	a := New(conn)
+	t.Cleanup(func() { _ = a.Close() })
 	subscribed(t, conn, a)
 
 	var wg sync.WaitGroup
