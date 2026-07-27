@@ -79,17 +79,12 @@ func main() {
 	defer cancel()
 	serverA.Shutdown(ctx)
 	serverB.Shutdown(ctx)
+
+	// Shutdown closes the hub's adapter and waits for its subscriber goroutine,
+	// so the deferred rdb.Close() below cannot land on an in-flight receive.
+	// An adapter you own outside a hub is yours to close.
 	hubA.hub.Shutdown(ctx)
 	hubB.hub.Shutdown(ctx)
-
-	// Close the adapters after the hubs stop and before the Redis client goes
-	// away. Close waits for the subscriber goroutine to finish, so the client
-	// is not pulled out from under an in-flight receive.
-	for name, a := range map[string]*wshubredis.Adapter{"node-A": adapterA, "node-B": adapterB} {
-		if err := a.Close(); err != nil {
-			log.Printf("%s: closing adapter: %v", name, err)
-		}
-	}
 }
 
 type node struct {
