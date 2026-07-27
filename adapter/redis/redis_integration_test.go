@@ -283,6 +283,95 @@ func TestCloseReturnsAfterSubscribe(t *testing.T) {
 	}
 }
 
+// Regression test: Subscribe overwrote a.cancel without calling the previous
+// one, so the first subscription's watcher and receive goroutines were
+// stranded on a context nothing would ever cancel, and Close blocked on
+// wg.Wait forever. The single-Subscribe deadlock was fixed before this case
+// was; the NATS adapter already handled resubscribe, which is what exposed
+// the asymmetry.
+func TestCloseReturnsAfterRepeatedSubscribe(t *testing.T) {
+	t.Parallel()
+
+	client := newRedis(t)
+	a := New(client)
+
+	for i := range 3 {
+		if err := a.Subscribe(context.Background(), func(wshub.AdapterMessage) {}); err != nil {
+			t.Fatalf("Subscribe %d: %v", i, err)
+		}
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- a.Close() }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+	case <-time.After(recvTimeout):
+		t.Fatal("Close did not return after repeated Subscribe — goroutines stranded")
+	}
+}
+
+// Resubscribing must replace the previous subscription, not run both.
+func TestResubscribeReplacesPreviousSubscription(t *testing.T) {
+	t.Parallel()
+
+	client := newRedis(t)
+	a := New(client)
+	t.Cleanup(func() { _ = a.Close() })
+
+	first := newCollector()
+	if err := a.Subscribe(context.Background(), first.handle); err != nil {
+		t.Fatalf("first Subscribe: %v", err)
+	}
+
+	second := subscribed(t, a)
+
+	want := sampleMessage()
+	if err := a.Publish(context.Background(), want); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	assertSameMessage(t, second.next(t), want)
+
+	// The replaced subscription must not still be receiving.
+	drainCollector(first)
+	if err := a.Publish(context.Background(), want); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	second.next(t)
+	first.expectQuiet(t)
+}
+
+func drainCollector(c *collector) {
+	for {
+		select {
+		case <-c.ch:
+		default:
+			return
+		}
+	}
+}
+
+// Publish reports ErrClosed after Close, so Subscribe must too rather than
+// silently resurrecting a closed adapter.
+func TestSubscribeAfterCloseReturnsErrClosed(t *testing.T) {
+	t.Parallel()
+
+	client := newRedis(t)
+	a := New(client)
+
+	if err := a.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	err := a.Subscribe(context.Background(), func(wshub.AdapterMessage) {})
+	if !errors.Is(err, ErrClosed) {
+		t.Errorf("Subscribe after Close = %v, want ErrClosed", err)
+	}
+}
+
 // Close must stop delivery and release the subscriber goroutine.
 func TestCloseStopsDelivery(t *testing.T) {
 	t.Parallel()

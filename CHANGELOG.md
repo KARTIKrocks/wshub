@@ -15,11 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Redis adapter: cancelling the `Subscribe` context did not stop delivery.** `Subscribe`'s doc comment promised that cancelling the context stopped the subscription, but go-redis uses the context passed to `client.Subscribe` only for the initial subscribe command — the resulting `PubSub` outlives it. Messages kept being delivered to the handler after cancellation. The same watcher goroutine fixes this, making both documented teardown paths work.
 
+- **Redis adapter: `Close()` deadlocked after `Subscribe()` was called more than once.** `Subscribe` overwrote `a.cancel` without invoking the previous one, so the earlier subscription's watcher and receive goroutines waited forever on a context nothing would cancel, and `Close()` blocked on `wg.Wait()`. The replaced subscription also kept delivering to its old handler. `Subscribe` now releases the previous subscription before installing the new one, matching the NATS adapter's existing behavior.
+
+- **Both adapters: `Subscribe` after `Close()` silently succeeded.** `Publish` returned `ErrClosed` but `Subscribe` created a live subscription on a closed adapter, resurrecting it with goroutines that `Close()` would never wait on. Both now return `ErrClosed`.
+
 - **NATS adapter: `Subscribe` leaked a goroutine per call when torn down via `Close()`.** The context-watcher goroutine blocked on `<-ctx.Done()` alone. Callers that pass a long-lived context (`context.Background()` is the documented usage) and shut down with `Close()` never cancelled it, so the goroutine lived for the life of the process — one per `Subscribe` call. It now also selects on an internal stop channel closed by `Close`, with exactly one of the two paths performing the drain.
 
 ### Added
 
-- **Integration tests for the Redis and NATS adapters.** `Publish` and `Subscribe` — the entire functional core of multi-node support — previously had no test coverage; the suites only checked option setters, `Close` idempotency and interface compliance. Both adapters now have round-trip, multi-subscriber fanout, channel/subject isolation, malformed-payload recovery, teardown, context-cancellation, goroutine-leak and concurrent-publish tests. These run against in-process brokers (miniredis and an embedded `nats-server`), so they need no external services in CI. Statement coverage: redis 30.2% → 91.2%, nats 26.5% → 96.5%.
+- **Integration tests for the Redis and NATS adapters.** `Publish` and `Subscribe` — the entire functional core of multi-node support — previously had no test coverage; the suites only checked option setters, `Close` idempotency and interface compliance. Both adapters now have round-trip, multi-subscriber fanout, channel/subject isolation, malformed-payload recovery, teardown, context-cancellation, goroutine-leak and concurrent-publish tests. These run against in-process brokers (miniredis and an embedded `nats-server`), so they need no external services in CI. Statement coverage: redis 30.2% → 92.2%, nats 26.5% → 96.7%.
 
 ## [1.6.1] - 2026-07-13
 

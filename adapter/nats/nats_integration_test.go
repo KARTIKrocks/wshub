@@ -421,6 +421,50 @@ func drainCollector(c *collector) {
 	}
 }
 
+// Publish reports ErrClosed after Close, so Subscribe must too rather than
+// silently resurrecting a closed adapter.
+func TestSubscribeAfterCloseReturnsErrClosed(t *testing.T) {
+	t.Parallel()
+
+	conn := newNATS(t)
+	a := New(conn)
+
+	if err := a.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	err := a.Subscribe(context.Background(), func(wshub.AdapterMessage) {})
+	if !errors.Is(err, ErrClosed) {
+		t.Errorf("Subscribe after Close = %v, want ErrClosed", err)
+	}
+}
+
+// Repeated Subscribe must not strand goroutines that Close then waits on.
+func TestCloseReturnsAfterRepeatedSubscribe(t *testing.T) {
+	t.Parallel()
+
+	conn := newNATS(t)
+	a := New(conn)
+
+	for i := range 3 {
+		if err := a.Subscribe(context.Background(), func(wshub.AdapterMessage) {}); err != nil {
+			t.Fatalf("Subscribe %d: %v", i, err)
+		}
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- a.Close() }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+	case <-time.After(recvTimeout):
+		t.Fatal("Close did not return after repeated Subscribe")
+	}
+}
+
 // Close must release the goroutine Subscribe spawns to watch the context,
 // even when that context is never cancelled by the caller.
 func TestCloseReleasesWatcherGoroutine(t *testing.T) {

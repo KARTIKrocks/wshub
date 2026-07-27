@@ -22,7 +22,7 @@ import (
 
 const defaultSubject = "wshub.messages"
 
-// ErrClosed is returned when Publish is called after Close.
+// ErrClosed is returned when Publish or Subscribe is called after Close.
 var ErrClosed = errors.New("nats adapter: closed")
 
 // Option configures the NATS adapter.
@@ -102,11 +102,17 @@ func (a *Adapter) Publish(ctx context.Context, msg wshub.AdapterMessage) error {
 // is handled by the NATS client's internal goroutine pool.
 //
 // The subscription is stopped when the context is cancelled, Close is
-// called, or the NATS connection is closed.
+// called, or the NATS connection is closed. Calling Subscribe again replaces
+// the previous subscription, which is drained first. Subscribe returns
+// ErrClosed if the adapter is closed.
 func (a *Adapter) Subscribe(ctx context.Context, handler func(wshub.AdapterMessage)) error {
 	// Drain any existing subscription, and release its watcher, to prevent
 	// a leak when Subscribe is called more than once.
 	a.mu.Lock()
+	if a.closed {
+		a.mu.Unlock()
+		return ErrClosed
+	}
 	if a.sub != nil {
 		_ = a.sub.Drain()
 		a.sub = nil

@@ -22,7 +22,7 @@ import (
 
 const defaultChannel = "wshub:messages"
 
-// ErrClosed is returned when Publish is called after Close.
+// ErrClosed is returned when Publish or Subscribe is called after Close.
 var ErrClosed = errors.New("redis adapter: closed")
 
 // Option configures the Redis adapter.
@@ -96,13 +96,29 @@ func (a *Adapter) Publish(ctx context.Context, msg wshub.AdapterMessage) error {
 // called for every message received. Subscribe spawns a goroutine internally
 // and returns immediately.
 //
-// The subscription is stopped when the context is cancelled or Close is called.
+// The subscription is stopped when the context is cancelled or Close is
+// called. Calling Subscribe again replaces the previous subscription, which is
+// released first. Subscribe returns ErrClosed if the adapter is closed.
 func (a *Adapter) Subscribe(ctx context.Context, handler func(wshub.AdapterMessage)) error {
 	ctx, cancel := context.WithCancel(ctx)
 
 	a.mu.Lock()
+	if a.closed {
+		a.mu.Unlock()
+		cancel()
+		return ErrClosed
+	}
+	// Release any previous subscription before replacing it. Each
+	// subscription's goroutines wait on the context captured when it was
+	// created, so overwriting a.cancel without calling it strands both of
+	// them and leaves Close blocked on wg.Wait forever.
+	prev := a.cancel
 	a.cancel = cancel
 	a.mu.Unlock()
+
+	if prev != nil {
+		prev()
+	}
 
 	sub := a.client.Subscribe(ctx, a.channel)
 
