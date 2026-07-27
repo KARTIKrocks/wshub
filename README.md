@@ -164,9 +164,13 @@ cross-site hijacking path stays closed. If your threat model requires
 rejecting originless requests, supply a custom checker.
 
 Rejected upgrades are counted under the `origin_rejected` error metric and
-logged (rate-limited to one line per minute) with the offending origin, so a
-front-end that needs allowlisting is easy to spot rather than surfacing as an
-unexplained `403`.
+logged with the offending origin, so a front-end that needs allowlisting is
+easy to spot rather than surfacing as an unexplained `403`.
+
+Because any unauthenticated client can force a failed handshake, all
+handshake-failure log lines are rate-limited to one per minute. Metrics
+(`origin_rejected`, `upgrade_failed`) are incremented unconditionally, so use
+those for exact counts rather than counting log lines.
 
 ## Hub API
 

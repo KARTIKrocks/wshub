@@ -29,7 +29,9 @@
 // served from a different host than the WebSocket endpoint, allow it with
 // [AllowOrigins]. Requests with no Origin header are permitted, so non-browser
 // clients are unaffected. Rejections increment the "origin_rejected" error
-// metric and are logged at a rate-limited interval.
+// metric and are logged, rate-limited to one line per minute because any
+// unauthenticated client can force a failed handshake — use the metric, not
+// the log, for exact counts.
 //
 // # Graceful Draining
 //
