@@ -1,7 +1,9 @@
 github.com/KARTIKrocks/wshub v1.7.0 h1:cInkwiLwycvjOCpLZjP3m60H4Vj9VbP/s9n1WbDsvkA=
 github.com/KARTIKrocks/wshub v1.7.0/go.mod h1:hXTsZKL8O30Q9aoDxmTkH4g6aPNd/zBkm5qnmHp+oIU=
-github.com/KARTIKrocks/wshub/adapter/redis v0.2.1 h1:N4hboxQhV6bEryS3VP4j9biFfNO7s8FaF0d2lEQb3sw=
-github.com/KARTIKrocks/wshub/adapter/redis v0.2.1/go.mod h1:u/dHi60u5674NI3EY7lLhkLqCrkcvrwfzbl4BN06M8s=
+github.com/KARTIKrocks/wshub/adapter/redis v0.2.2 h1:k21duObfr1Kxy93RM70oAv2tDfvy9WHjpW8M84qIXCk=
+github.com/KARTIKrocks/wshub/adapter/redis v0.2.2/go.mod h1:TyYvu7bV6z9x2Lhxb02Nm8L+7Fq9Cv0N+IPC/mFI5ec=
+github.com/alicebob/miniredis/v2 v2.38.0 h1:nZAzCR+Lj+Vxk4ZXzm2NuKq2O33RXj1XxJ2e2uP9jiw=
+github.com/alicebob/miniredis/v2 v2.38.0/go.mod h1:TcL7YfarKPGDAthEtl5NBeHZfeUQj6OXMm/+iu5cLMM=
 github.com/bsm/ginkgo/v2 v2.12.0 h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=
 github.com/bsm/ginkgo/v2 v2.12.0/go.mod h1:SwYbGRRDovPVboqFv0tPTcG1sN61LM1Z4ARdbAV9g4c=
 github.com/bsm/gomega v1.27.10 h1:yeMWxP2pV2fG3FgAODIY8EiRE3dy0aeFYt4l7wh6yKA=
@@ -22,6 +24,8 @@ github.com/redis/go-redis/v9 v9.21.0 h1:FPBE4hhbAke+TLmcY3WkpbDffJEomdqPn3HYiqAt
 github.com/redis/go-redis/v9 v9.21.0/go.mod h1:v/M13XI1PVCDcm01VtPFOADfZtHf8YW3baQf57KlIkA=
 github.com/stretchr/testify v1.3.0 h1:TivCn/peBQ7UY8ooIcPgZFpTNSz0Q2U6UrFlUfqbe0Q=
 github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UVUgZn+9EI=
+github.com/yuin/gopher-lua v1.1.2 h1:yF/FjE3hD65tBbt0VXLE13HWS9h34fdzJmrWRXwobGA=
+github.com/yuin/gopher-lua v1.1.2/go.mod h1:7aRmXIWl37SqRf0koeyylBEzJ+aPt8A+mmkQ4f1ntR8=
 github.com/zeebo/xxh3 v1.1.0 h1:s7DLGDK45Dyfg7++yxI0khrfwq9661w9EN78eP/UZVs=
 github.com/zeebo/xxh3 v1.1.0/go.mod h1:IisAie1LELR4xhVinxWS5+zf1lA4p0MW4T+w+W07F5s=
 go.uber.org/atomic v1.11.0 h1:ZvwS0R+56ePWxUNi+Atn9dWONBPp/AUETXlHW0DxSjE=
