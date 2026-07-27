@@ -116,7 +116,8 @@ func (a *Adapter) Subscribe(ctx context.Context, handler func(wshub.AdapterMessa
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
-		defer sub.Close()
+		// Teardown path — a close error here is not actionable.
+		defer func() { _ = sub.Close() }()
 
 		ch := sub.Channel()
 		for msg := range ch {
