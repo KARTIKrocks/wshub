@@ -194,6 +194,14 @@ func AllowAllOrigins(r *http.Request) bool {
 // It parses the Origin header as a URL and compares the host (including port)
 // against the request's Host header, handling mismatched ports correctly.
 //
+// The scheme is deliberately not compared, so http://example.com is accepted by
+// a server reachable at example.com over https. A server cannot reliably know
+// its own scheme: behind a TLS-terminating proxy r.TLS is nil, so comparing
+// schemes would reject the legitimate https origins of every proxied
+// deployment. This matches gorilla/websocket's own same-origin check. If you
+// need scheme-exact matching, use AllowOrigins, which compares the full origin
+// string.
+//
 // Requests without an Origin header are allowed because non-browser clients
 // (mobile apps, CLI tools) typically omit it. If your threat model requires
 // rejecting originless requests, use a custom CheckOrigin function.

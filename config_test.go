@@ -122,6 +122,11 @@ func TestAllowSameOrigin(t *testing.T) {
 		{"same http", "http://localhost:8080", "localhost:8080", true},
 		{"same https", "https://example.com", "example.com", true},
 		{"different", "https://evil.com", "example.com", false},
+		// The scheme is not part of the comparison — see AllowSameOrigin's
+		// doc comment for why. Pinned so the relaxation stays deliberate.
+		{"cross scheme same host", "http://example.com", "example.com", true},
+		{"cross scheme same host and port", "http://example.com:8443", "example.com:8443", true},
+		{"same scheme different port", "https://example.com:8443", "example.com", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

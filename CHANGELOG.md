@@ -27,6 +27,8 @@ v1.7.0 — they work against v1.6.1 as well.
 
   **Who is not affected:** same-origin browser clients, and any client that sends no `Origin` header — mobile apps, CLI tools and server-to-server callers keep working unchanged, because `AllowSameOrigin` allows originless requests. To restore the old behavior explicitly, set `WithCheckOrigin(wshub.AllowAllOrigins)`.
 
+  **Scope of the check:** `AllowSameOrigin` compares host and port, not scheme, so an `http://example.com` origin is accepted by a server reachable at `example.com` over https. This is deliberate — behind a TLS-terminating proxy `r.TLS` is nil, so a scheme comparison would reject the legitimate `https://` origins of every proxied deployment — and it matches gorilla/websocket's own same-origin check. Use `AllowOrigins`, which compares the full origin string, if you need scheme-exact matching.
+
 ### Added
 
 - **Rejected origins are now observable.** A rejected upgrade previously surfaced only as a bare `403` from gorilla, which is indistinguishable from a proxy or routing fault. Rejections now increment the `origin_rejected` error metric and emit a warning naming the offending origin and host, along with the call needed to allow it. The client-supplied `Origin` value is truncated on a rune boundary before being logged.

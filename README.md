@@ -157,6 +157,12 @@ config.CheckOrigin = func(r *http.Request) bool {
 config.CheckOrigin = wshub.AllowAllOrigins
 ```
 
+`AllowSameOrigin` compares host and port, not scheme, so `http://example.com`
+is accepted by a server reachable at `example.com` over https. A server behind
+a TLS-terminating proxy cannot see its own scheme, so comparing it would reject
+the legitimate origins of every proxied deployment. Use `AllowOrigins`, which
+compares the full origin string, if you need scheme-exact matching.
+
 Requests without an `Origin` header are allowed by `AllowSameOrigin` and
 `AllowOrigins`, since non-browser clients (mobile apps, CLI tools,
 server-to-server) typically omit it. Browsers always send it, so the
