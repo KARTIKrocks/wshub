@@ -3,7 +3,7 @@ module github.com/KARTIKrocks/wshub/examples/multinode
 go 1.24
 
 require (
-	github.com/KARTIKrocks/wshub v1.6.1
+	github.com/KARTIKrocks/wshub v1.7.0
 	github.com/KARTIKrocks/wshub/adapter/redis v0.2.1
 	github.com/redis/go-redis/v9 v9.21.0
 )
