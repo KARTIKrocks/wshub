@@ -21,11 +21,16 @@ Thanks for your interest in contributing!
 ### Running Tests
 
 ```bash
-make test        # run tests with race detector
-make bench       # run benchmarks
-make lint        # run linter
-make ci          # run all checks
+make test          # run root-module tests with the race detector
+make test-modules  # run tests for adapter/redis, adapter/nats, prometheus
+make bench         # run benchmarks
+make lint          # run linter on the root module
+make ci            # run all checks across every module
 ```
+
+This repository is multi-module: the adapters and the Prometheus collector each
+have their own `go.mod`, so the root module's `./...` does not reach them. Use
+`make ci` (or `make all`) to cover everything the way CI does.
 
 ### Code Style
 

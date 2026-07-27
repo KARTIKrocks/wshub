@@ -38,14 +38,16 @@ in submodules so consumers don't pull in unwanted dependencies. When touching th
 
 ## Build, test, and lint
 
-**Always run `make all` after making changes** — it runs fmt, vet, lint, test,
-test-prometheus, and build. This is the expected validation gate.
+**Always run `make all` after making changes** — it vets, lints, tests, and
+builds **every module**, not just the root. This is the expected validation gate.
 
 ```bash
-make all              # fmt + vet + lint + test + test-prometheus + build (run this after changes)
-make test             # go test -race -count=1 ./...
-make test-prometheus  # tests for the prometheus submodule
-make lint             # golangci-lint (make setup installs it if missing)
+make all              # fmt + vet(+modules) + lint(+modules) + test(+modules) + build(+examples)
+make test             # root module only: go test -race -count=1 ./...
+make test-modules     # adapter/redis, adapter/nats, prometheus
+make lint             # golangci-lint on the root module (make setup installs it if missing)
+make lint-modules     # golangci-lint on the nested modules
+make work             # create the gitignored go.work used by the module targets
 make fix              # gofmt + goimports + golangci-lint --fix
 make bench            # benchmarks with -benchmem
 make fuzz             # fuzz targets (30s each)
@@ -56,8 +58,11 @@ make cover            # coverage report -> coverage.html
   is a first-class requirement here.
 - `make lint` / `make setup` require `golangci-lint` v2 and `goimports`
   (pinned versions in the `Makefile`).
-- The `adapter/redis` and `adapter/nats` submodules are not covered by
-  `make all`; run `cd adapter/redis && go test -race ./...` when you change them.
+- The root module's `./...` stops at nested `go.mod` boundaries, so the module
+  targets above are what cover the adapters and the Prometheus collector. They
+  resolve `wshub` through a gitignored `go.work` pointing at the working tree,
+  which is how CI runs them too (via `go mod edit -replace`) — so a breaking
+  change in the root module fails locally rather than after release.
 
 ## Conventions
 

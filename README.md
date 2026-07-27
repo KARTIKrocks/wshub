@@ -515,6 +515,27 @@ go hub.Run()
 
 Adapters are separate Go modules -- importing the core `wshub` package never pulls in Redis or NATS dependencies.
 
+### Adapter Lifecycle
+
+Close the adapter as part of your shutdown sequence, after the hub has stopped:
+
+```go
+hub.Drain(ctx)
+hub.Shutdown(ctx)
+adapter.Close() // stops the subscriber and releases its goroutines
+```
+
+- `Close` returns once the adapter's subscriber goroutines have exited, so no
+  goroutine started by `Subscribe` outlives it.
+- `Close` does **not** close the underlying Redis client or NATS connection —
+  that stays the caller's responsibility.
+- `Close` is idempotent. After it, `Publish` and `Subscribe` both return the
+  adapter's `ErrClosed`.
+- Calling `Subscribe` again replaces the previous subscription, releasing it
+  first; the replaced handler stops receiving.
+- Cancelling the context passed to `Subscribe` stops delivery, as an
+  alternative to `Close`.
+
 ### What Gets Relayed Across Nodes
 
 | Operation                                                                            | Cross-Node         |
@@ -726,16 +747,17 @@ Save as `index.html` and open in a browser while the server is running:
 
 ## Best Practices
 
-1. **Always use middleware for cross-cutting concerns** (logging, metrics, auth)
-2. **Use hooks for lifecycle events** instead of wrapping the hub
-3. **Implement proper logging and metrics** for production observability
-4. **Set appropriate limits** to prevent resource exhaustion
-5. **Use `Drain` then `Shutdown`** for zero-downtime deploys
-6. **Handle errors appropriately** - don't ignore send failures
-7. **Use rooms for targeted messaging** instead of filtering in handlers
-8. **Set user ID after authentication** for multi-device support
-9. **Use metadata for request-scoped data** instead of global state
-10. **Test with concurrent clients** to ensure thread safety
+1. **Keep `CheckOrigin` restrictive** — the default (`AllowSameOrigin`) is safe; reach for `AllowOrigins` when your front-end is on another host, and treat `AllowAllOrigins` as development-only
+2. **Always use middleware for cross-cutting concerns** (logging, metrics, auth)
+3. **Use hooks for lifecycle events** instead of wrapping the hub
+4. **Implement proper logging and metrics** for production observability
+5. **Set appropriate limits** to prevent resource exhaustion
+6. **Use `Drain` then `Shutdown`** for zero-downtime deploys, then close the adapter
+7. **Handle errors appropriately** - don't ignore send failures
+8. **Use rooms for targeted messaging** instead of filtering in handlers
+9. **Set user ID after authentication** for multi-device support
+10. **Use metadata for request-scoped data** instead of global state
+11. **Test with concurrent clients** to ensure thread safety
 
 ## Performance Tips
 

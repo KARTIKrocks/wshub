@@ -60,10 +60,12 @@ func NewChatServer() *ChatServer {
 		usernames: make(map[string]string),
 	}
 
+	// CheckOrigin is left at its default (AllowSameOrigin): this server serves
+	// its own page from "/", so the browser connects same-origin. A front-end
+	// served from a different host would need WithCheckOrigin(AllowOrigins(...)).
 	config := wshub.DefaultConfig().
 		WithMaxMessageSize(1024 * 1024).
-		WithCompression(true).
-		WithCheckOrigin(wshub.AllowAllOrigins)
+		WithCompression(true)
 
 	limits := wshub.DefaultLimits().
 		WithMaxConnections(10000).
