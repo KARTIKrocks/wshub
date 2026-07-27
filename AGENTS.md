@@ -48,6 +48,9 @@ make test-modules     # adapter/redis, adapter/nats, prometheus
 make lint             # golangci-lint on the root module (make setup installs it if missing)
 make lint-modules     # golangci-lint on the nested modules
 make work             # create the gitignored go.work used by the module targets
+make tidy             # go mod tidy on the root module
+make tidy-modules     # go mod tidy on the nested modules (run after bumping their wshub pin)
+make tidy-check       # fail if any go.mod/go.sum is untidy, leaving no diff behind
 make fix              # gofmt + goimports + golangci-lint --fix
 make bench            # benchmarks with -benchmem
 make fuzz             # fuzz targets (30s each)
