@@ -52,7 +52,11 @@ type Config struct {
 	// Receivers must split coalesced frames on \n. Default: false.
 	CoalesceWrites bool
 
-	// CheckOrigin is a function to validate the request origin.
+	// CheckOrigin validates the request origin during the upgrade handshake.
+	// Defaults to AllowSameOrigin. Use AllowOrigins to permit specific
+	// cross-origin front-ends, or AllowAllOrigins to disable the check
+	// entirely — the latter exposes the server to cross-site WebSocket
+	// hijacking and should be limited to development.
 	CheckOrigin func(r *http.Request) bool
 
 	// Subprotocols specifies the server's supported protocols.
@@ -70,7 +74,7 @@ func DefaultConfig() Config {
 		MaxMessageSize:    512 * 1024, // 512KB
 		SendChannelSize:   256,
 		EnableCompression: false,
-		CheckOrigin:       AllowAllOrigins,
+		CheckOrigin:       AllowSameOrigin,
 	}
 }
 
@@ -178,6 +182,10 @@ func (c Config) WithSubprotocols(protocols ...string) Config {
 }
 
 // AllowAllOrigins is a CheckOrigin function that allows all origins.
+//
+// This disables cross-site WebSocket hijacking protection: any page on any
+// site can open an authenticated connection to your server using the
+// visitor's cookies. Prefer AllowSameOrigin (the default) or AllowOrigins.
 func AllowAllOrigins(r *http.Request) bool {
 	return true
 }
@@ -185,6 +193,14 @@ func AllowAllOrigins(r *http.Request) bool {
 // AllowSameOrigin is a CheckOrigin function that only allows same-origin requests.
 // It parses the Origin header as a URL and compares the host (including port)
 // against the request's Host header, handling mismatched ports correctly.
+//
+// The scheme is deliberately not compared, so http://example.com is accepted by
+// a server reachable at example.com over https. A server cannot reliably know
+// its own scheme: behind a TLS-terminating proxy r.TLS is nil, so comparing
+// schemes would reject the legitimate https origins of every proxied
+// deployment. This matches gorilla/websocket's own same-origin check. If you
+// need scheme-exact matching, use AllowOrigins, which compares the full origin
+// string.
 //
 // Requests without an Origin header are allowed because non-browser clients
 // (mobile apps, CLI tools) typically omit it. If your threat model requires

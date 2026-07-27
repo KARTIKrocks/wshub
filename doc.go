@@ -22,6 +22,17 @@
 // [Hub.HandleHTTP] handler. Each connection spawns a read pump and write pump
 // goroutine managed by the hub. Use [Hub.Shutdown] for graceful teardown.
 //
+// # Origin Checking
+//
+// [DefaultConfig] uses [AllowSameOrigin], which rejects upgrades from other
+// origins to prevent cross-site WebSocket hijacking. If your front-end is
+// served from a different host than the WebSocket endpoint, allow it with
+// [AllowOrigins]. Requests with no Origin header are permitted, so non-browser
+// clients are unaffected. Rejections increment the "origin_rejected" error
+// metric and are logged, rate-limited to one line per minute because any
+// unauthenticated client can force a failed handshake — use the metric, not
+// the log, for exact counts.
+//
 // # Graceful Draining
 //
 // For zero-downtime rolling deploys (e.g. Kubernetes), call [Hub.Drain]

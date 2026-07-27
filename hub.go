@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -196,6 +197,10 @@ type Hub struct {
 	// nodeID uniquely identifies this hub instance for adapter message deduplication.
 	nodeID string
 
+	// Rate limiters for log lines an unauthenticated client can trigger.
+	originRejectLog logLimiter
+	upgradeFailLog  logLimiter
+
 	// hookTimeout is the maximum time to wait for synchronous hooks
 	// (e.g. BeforeDisconnect) before proceeding. Default: 5s.
 	hookTimeout time.Duration
@@ -252,18 +257,26 @@ func NewHub(opts ...Option) *Hub {
 	h.upgrader = websocket.Upgrader{
 		ReadBufferSize:    h.config.ReadBufferSize,
 		WriteBufferSize:   h.config.WriteBufferSize,
-		CheckOrigin:       h.config.CheckOrigin,
+		CheckOrigin:       h.checkOrigin,
 		EnableCompression: h.config.EnableCompression,
 		Subprotocols:      h.config.Subprotocols,
 	}
 
 	// Warn if the origin checker accepts all origins. This is convenient
 	// for development but a security risk in production.
+	//
+	// The probe uses random hosts under the reserved .invalid TLD (RFC 2606)
+	// rather than a plausible-looking domain: a checker that pattern-matches a
+	// real suffix — say strings.HasSuffix(origin, ".example.com") — would
+	// accept a probe built from that same domain and be reported as
+	// accepting everything, which is the opposite of the truth.
 	if h.config.CheckOrigin != nil {
-		probe := &http.Request{Header: http.Header{"Origin": []string{"https://attacker.example.com"}}}
-		probe.Host = "legitimate.example.com"
+		probeOrigin := "https://" + uuid.New().String() + ".invalid"
+		probe := &http.Request{Header: http.Header{"Origin": []string{probeOrigin}}}
+		probe.Host = uuid.New().String() + ".invalid"
 		if h.config.CheckOrigin(probe) {
-			h.logger.Warn("CheckOrigin allows all origins — restrict this in production")
+			h.logger.Warn("SECURITY: CheckOrigin accepts every origin, exposing this server " +
+				"to cross-site WebSocket hijacking — restrict it before deploying")
 		}
 	}
 
@@ -942,13 +955,85 @@ func WithUserID(userID string) UpgradeOption {
 }
 
 // HandleHTTP returns an HTTP handler that upgrades connections to WebSocket.
-// Upgrade errors are logged via the hub's logger.
+// Upgrade errors are logged via the hub's logger, rate-limited so a hostile
+// client cannot flood the logs by repeatedly failing the handshake. Use
+// [Hub.UpgradeConnection] directly to handle every error yourself.
 func (h *Hub) HandleHTTP() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if _, err := h.UpgradeConnection(w, r); err != nil {
-			h.logger.Error("WebSocket upgrade failed", "error", err, "remote", r.RemoteAddr)
+			h.logHandshakeFailure("WebSocket upgrade failed", "error", err, "remote", r.RemoteAddr)
 		}
 	}
+}
+
+// handshakeLogInterval bounds how often a failed-handshake log line is
+// emitted. Every failure below this point is reachable by an unauthenticated
+// client, so an unbounded line per failure is a log-flooding vector. These
+// logs exist to surface operator misconfiguration, which one line per interval
+// conveys just as well; exact counts remain available on the "origin_rejected"
+// and "upgrade_failed" error metrics, which are incremented unconditionally.
+const handshakeLogInterval = time.Minute
+
+// maxLoggedOriginLen caps how much of the client-supplied Origin header is
+// echoed into logs.
+const maxLoggedOriginLen = 128
+
+// logLimiter rate-limits a log line that an unauthenticated client can
+// trigger. The zero value permits the first call immediately.
+type logLimiter struct {
+	last atomic.Int64
+}
+
+// allow reports whether enough time has passed since the last permitted call.
+func (l *logLimiter) allow(interval time.Duration) bool {
+	now := time.Now().UnixNano()
+	last := l.last.Load()
+	if now-last < int64(interval) {
+		return false
+	}
+	// CompareAndSwap keeps concurrent callers from each emitting a line.
+	return l.last.CompareAndSwap(last, now)
+}
+
+// logHandshakeFailure reports a failed upgrade, rate-limited so a hostile
+// client cannot flood the logs by repeatedly failing the handshake. Callers
+// are responsible for incrementing the corresponding error metric, which is
+// what carries the exact count.
+func (h *Hub) logHandshakeFailure(msg string, args ...any) {
+	if h.upgradeFailLog.allow(handshakeLogInterval) {
+		h.logger.Error(msg, args...)
+	}
+}
+
+// truncateOrigin bounds a client-supplied Origin before it reaches the logs,
+// dropping any partial rune left at the cut so the output stays valid UTF-8.
+func truncateOrigin(origin string) string {
+	if len(origin) <= maxLoggedOriginLen {
+		return origin
+	}
+	return strings.ToValidUTF8(origin[:maxLoggedOriginLen], "") + "…"
+}
+
+// checkOrigin wraps the configured CheckOrigin so that rejections are
+// observable. A rejected upgrade otherwise surfaces only as a bare 403 from
+// gorilla, which is indistinguishable from a routing or proxy problem — the
+// most common way to hit this is a legitimate cross-origin front-end that
+// simply needs to be allowlisted.
+func (h *Hub) checkOrigin(r *http.Request) bool {
+	if h.config.CheckOrigin(r) {
+		return true
+	}
+
+	h.metrics.IncrementErrors("origin_rejected")
+
+	if h.originRejectLog.allow(handshakeLogInterval) {
+		h.logger.Warn("WebSocket upgrade rejected: origin not allowed. "+
+			"If this origin is legitimate, allow it with "+
+			"WithCheckOrigin(wshub.AllowOrigins(...))",
+			"origin", truncateOrigin(r.Header.Get("Origin")), "host", r.Host)
+	}
+
+	return false
 }
 
 // UpgradeConnection upgrades an HTTP connection to WebSocket.
@@ -994,7 +1079,7 @@ func (h *Hub) UpgradeConnection(w http.ResponseWriter, r *http.Request, opts ...
 	// Upgrade connection
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		h.logger.Error("Failed to upgrade connection", "error", err)
+		h.logHandshakeFailure("Failed to upgrade connection", "error", err)
 		h.metrics.IncrementErrors("upgrade_failed")
 		return nil, err
 	}
