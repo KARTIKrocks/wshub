@@ -22,7 +22,7 @@ import (
 
 const defaultChannel = "wshub:messages"
 
-// ErrClosed is returned when Publish is called after Close.
+// ErrClosed is returned when Publish or Subscribe is called after Close.
 var ErrClosed = errors.New("redis adapter: closed")
 
 // Option configures the Redis adapter.
@@ -96,13 +96,35 @@ func (a *Adapter) Publish(ctx context.Context, msg wshub.AdapterMessage) error {
 // called for every message received. Subscribe spawns a goroutine internally
 // and returns immediately.
 //
-// The subscription is stopped when the context is cancelled or Close is called.
+// The subscription is stopped when the context is cancelled or Close is
+// called. Calling Subscribe again replaces the previous subscription, which is
+// released first. Subscribe returns ErrClosed if the adapter is closed.
 func (a *Adapter) Subscribe(ctx context.Context, handler func(wshub.AdapterMessage)) error {
 	ctx, cancel := context.WithCancel(ctx)
 
 	a.mu.Lock()
+	if a.closed {
+		a.mu.Unlock()
+		cancel()
+		return ErrClosed
+	}
+	// Release any previous subscription before replacing it. Each
+	// subscription's goroutines wait on the context captured when it was
+	// created, so overwriting a.cancel without calling it strands both of
+	// them and leaves Close blocked on wg.Wait forever.
+	prev := a.cancel
 	a.cancel = cancel
+	// Reserve the two goroutine slots while still holding the lock. Adding to
+	// a WaitGroup whose counter is zero must happen before any Wait on it, and
+	// Close's Wait can otherwise start between this call's closed check and the
+	// go statements below — leaving Close to return while both goroutines are
+	// still starting up.
+	a.wg.Add(2)
 	a.mu.Unlock()
+
+	if prev != nil {
+		prev()
+	}
 
 	sub := a.client.Subscribe(ctx, a.channel)
 
@@ -110,14 +132,25 @@ func (a *Adapter) Subscribe(ctx context.Context, handler func(wshub.AdapterMessa
 	if _, err := sub.Receive(ctx); err != nil {
 		_ = sub.Close()
 		cancel()
+		// Release the slots reserved above; neither goroutine will start.
+		a.wg.Add(-2)
 		return err
 	}
 
-	a.wg.Add(1)
+	// Closing the PubSub is what closes the channel the receive loop ranges
+	// over, so it has to happen from outside that loop — a `defer sub.Close()`
+	// on the receive goroutine can only run once the loop has already exited,
+	// which never happens. go-redis does not tie the PubSub's lifetime to the
+	// context passed to Subscribe, so this watcher is also what makes context
+	// cancellation stop delivery.
 	go func() {
 		defer a.wg.Done()
-		// Teardown path — a close error here is not actionable.
-		defer func() { _ = sub.Close() }()
+		<-ctx.Done()
+		_ = sub.Close()
+	}()
+
+	go func() {
+		defer a.wg.Done()
 
 		ch := sub.Channel()
 		for msg := range ch {
