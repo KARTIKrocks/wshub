@@ -56,6 +56,11 @@ type Adapter struct {
 	mu     sync.Mutex
 	sub    *gonats.Subscription
 	closed bool
+
+	// stop releases the context-watcher goroutine started by Subscribe when
+	// the subscription is torn down by Close rather than by cancellation.
+	// Closed and cleared under mu, so it is closed at most once.
+	stop chan struct{}
 }
 
 // New creates a new NATS adapter. The provided connection must already be
@@ -99,11 +104,16 @@ func (a *Adapter) Publish(ctx context.Context, msg wshub.AdapterMessage) error {
 // The subscription is stopped when the context is cancelled, Close is
 // called, or the NATS connection is closed.
 func (a *Adapter) Subscribe(ctx context.Context, handler func(wshub.AdapterMessage)) error {
-	// Drain any existing subscription to prevent leak.
+	// Drain any existing subscription, and release its watcher, to prevent
+	// a leak when Subscribe is called more than once.
 	a.mu.Lock()
 	if a.sub != nil {
 		_ = a.sub.Drain()
 		a.sub = nil
+	}
+	if a.stop != nil {
+		close(a.stop)
+		a.stop = nil
 	}
 	a.mu.Unlock()
 
@@ -121,14 +131,24 @@ func (a *Adapter) Subscribe(ctx context.Context, handler func(wshub.AdapterMessa
 		return err
 	}
 
+	stop := make(chan struct{})
+
 	a.mu.Lock()
 	a.sub = sub
+	a.stop = stop
 	a.mu.Unlock()
 
-	// Watch for context cancellation and drain the subscription.
+	// Watch for context cancellation and drain the subscription. Callers
+	// commonly pass a context that is never cancelled and tear down via Close
+	// instead, so this goroutine must also exit on stop — otherwise it lives
+	// for the life of the process. Exactly one of the two paths drains: on
+	// stop, Close owns the drain and reports its error.
 	go func() {
-		<-ctx.Done()
-		_ = sub.Drain()
+		select {
+		case <-ctx.Done():
+			_ = sub.Drain()
+		case <-stop:
+		}
 	}()
 
 	return nil
@@ -144,6 +164,11 @@ func (a *Adapter) Close() error {
 		return nil
 	}
 	a.closed = true
+
+	if a.stop != nil {
+		close(a.stop)
+		a.stop = nil
+	}
 
 	if a.sub != nil {
 		return a.sub.Drain()

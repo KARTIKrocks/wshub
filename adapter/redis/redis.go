@@ -113,11 +113,22 @@ func (a *Adapter) Subscribe(ctx context.Context, handler func(wshub.AdapterMessa
 		return err
 	}
 
+	// Closing the PubSub is what closes the channel the receive loop ranges
+	// over, so it has to happen from outside that loop — a `defer sub.Close()`
+	// on the receive goroutine can only run once the loop has already exited,
+	// which never happens. go-redis does not tie the PubSub's lifetime to the
+	// context passed to Subscribe, so this watcher is also what makes context
+	// cancellation stop delivery.
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
-		// Teardown path — a close error here is not actionable.
-		defer func() { _ = sub.Close() }()
+		<-ctx.Done()
+		_ = sub.Close()
+	}()
+
+	a.wg.Add(1)
+	go func() {
+		defer a.wg.Done()
 
 		ch := sub.Channel()
 		for msg := range ch {
