@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING (security): `DefaultConfig()` now uses `AllowSameOrigin` instead of `AllowAllOrigins`.** The previous default accepted an upgrade from any origin, leaving every server built on defaults open to cross-site WebSocket hijacking: any page on any site could open an authenticated connection using the visitor's cookies. A startup warning was not sufficient mitigation for an insecure default.
+
+  **Who is affected:** deployments whose browser front-end is served from a different origin than the WebSocket endpoint (for example a page on `app.example.com` connecting to `ws.example.com`). Those connections are now rejected with `403` until the origin is allowlisted:
+
+  ```go
+  hub := wshub.NewHub(wshub.WithConfig(
+      wshub.DefaultConfig().WithCheckOrigin(
+          wshub.AllowOrigins("https://app.example.com"),
+      ),
+  ))
+  ```
+
+  **Who is not affected:** same-origin browser clients, and any client that sends no `Origin` header — mobile apps, CLI tools and server-to-server callers keep working unchanged, because `AllowSameOrigin` allows originless requests. To restore the old behavior explicitly, set `WithCheckOrigin(wshub.AllowAllOrigins)`.
+
+### Added
+
+- **Rejected origins are now observable.** A rejected upgrade previously surfaced only as a bare `403` from gorilla, which is indistinguishable from a proxy or routing fault. Rejections now increment the `origin_rejected` error metric and emit a warning naming the offending origin and host, along with the call needed to allow it. The log line is rate-limited to one per minute — rejections are attacker-triggerable, so an unbounded line per rejection would be a log-flooding vector — while the metric still counts every one. The client-supplied `Origin` value is truncated before being logged.
+
+- **Integration tests for the Redis and NATS adapters.** `Publish` and `Subscribe` — the entire functional core of multi-node support — previously had no test coverage; the suites only checked option setters, `Close` idempotency and interface compliance. Both adapters now have round-trip, multi-subscriber fanout, channel/subject isolation, malformed-payload recovery, teardown, context-cancellation, goroutine-leak and concurrent-publish tests. These run against in-process brokers (miniredis and an embedded `nats-server`), so they need no external services in CI. Statement coverage: redis 30.2% → 90.6%, nats 26.5% → 94.8%.
+
 ### Fixed
 
 - **Redis adapter: `Close()` deadlocked permanently after `Subscribe()`.** The receive goroutine closed the `PubSub` from its own `defer`, but that defer could only run once the `for msg := range sub.Channel()` loop had exited — and the loop only exits when the `PubSub` is closed. Nothing else closed it, so the goroutine parked forever on the channel receive and `Close()` blocked on `wg.Wait()` with no timeout. Every multi-node deployment using the Redis adapter would hang on graceful shutdown.
@@ -24,10 +46,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Redis adapter: `Subscribe` added to its `WaitGroup` after releasing the adapter lock.** A `Close()` starting in that window could reach `wg.Wait()` while the counter was still zero and return before either subscription goroutine had started — and adding to a `WaitGroup` from zero concurrently with `Wait` is a documented misuse. Both slots are now reserved while the lock is held.
 
 - **NATS adapter: `Subscribe` leaked a goroutine per call when torn down via `Close()`.** The context-watcher goroutine blocked on `<-ctx.Done()` alone. Callers that pass a long-lived context (`context.Background()` is the documented usage) and shut down with `Close()` never cancelled it, so the goroutine lived for the life of the process — one per `Subscribe` call. It now also selects on an internal stop channel closed by `Close`, with exactly one of the two paths performing the drain.
-
-### Added
-
-- **Integration tests for the Redis and NATS adapters.** `Publish` and `Subscribe` — the entire functional core of multi-node support — previously had no test coverage; the suites only checked option setters, `Close` idempotency and interface compliance. Both adapters now have round-trip, multi-subscriber fanout, channel/subject isolation, malformed-payload recovery, teardown, context-cancellation, goroutine-leak and concurrent-publish tests. These run against in-process brokers (miniredis and an embedded `nats-server`), so they need no external services in CI. Statement coverage: redis 30.2% → 90.6%, nats 26.5% → 94.8%.
 
 ## [1.6.1] - 2026-07-13
 

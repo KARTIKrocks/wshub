@@ -196,6 +196,10 @@ type Hub struct {
 	// nodeID uniquely identifies this hub instance for adapter message deduplication.
 	nodeID string
 
+	// lastOriginRejectLog holds the unix-nano time of the most recent
+	// rejected-origin warning, used to rate-limit that log line.
+	lastOriginRejectLog atomic.Int64
+
 	// hookTimeout is the maximum time to wait for synchronous hooks
 	// (e.g. BeforeDisconnect) before proceeding. Default: 5s.
 	hookTimeout time.Duration
@@ -252,7 +256,7 @@ func NewHub(opts ...Option) *Hub {
 	h.upgrader = websocket.Upgrader{
 		ReadBufferSize:    h.config.ReadBufferSize,
 		WriteBufferSize:   h.config.WriteBufferSize,
-		CheckOrigin:       h.config.CheckOrigin,
+		CheckOrigin:       h.checkOrigin,
 		EnableCompression: h.config.EnableCompression,
 		Subprotocols:      h.config.Subprotocols,
 	}
@@ -263,7 +267,8 @@ func NewHub(opts ...Option) *Hub {
 		probe := &http.Request{Header: http.Header{"Origin": []string{"https://attacker.example.com"}}}
 		probe.Host = "legitimate.example.com"
 		if h.config.CheckOrigin(probe) {
-			h.logger.Warn("CheckOrigin allows all origins — restrict this in production")
+			h.logger.Warn("SECURITY: CheckOrigin accepts every origin, exposing this server " +
+				"to cross-site WebSocket hijacking — restrict it before deploying")
 		}
 	}
 
@@ -949,6 +954,55 @@ func (h *Hub) HandleHTTP() http.HandlerFunc {
 			h.logger.Error("WebSocket upgrade failed", "error", err, "remote", r.RemoteAddr)
 		}
 	}
+}
+
+// originRejectLogInterval bounds how often rejected-origin warnings are
+// logged. Rejections are attacker-triggerable, so one log line per rejection
+// would be a log-flooding vector. The warning exists to surface operator
+// misconfiguration, and one line per interval does that just as well; every
+// rejection is still counted via the "origin_rejected" error metric.
+const originRejectLogInterval = time.Minute
+
+// maxLoggedOriginLen caps how much of the client-supplied Origin header is
+// echoed into logs.
+const maxLoggedOriginLen = 128
+
+// checkOrigin wraps the configured CheckOrigin so that rejections are
+// observable. A rejected upgrade otherwise surfaces only as a bare 403 from
+// gorilla, which is indistinguishable from a routing or proxy problem — the
+// most common way to hit this is a legitimate cross-origin front-end that
+// simply needs to be allowlisted.
+func (h *Hub) checkOrigin(r *http.Request) bool {
+	if h.config.CheckOrigin(r) {
+		return true
+	}
+
+	h.metrics.IncrementErrors("origin_rejected")
+
+	if h.shouldLogOriginReject() {
+		origin := r.Header.Get("Origin")
+		if len(origin) > maxLoggedOriginLen {
+			origin = origin[:maxLoggedOriginLen] + "…"
+		}
+		h.logger.Warn("WebSocket upgrade rejected: origin not allowed. "+
+			"If this origin is legitimate, allow it with "+
+			"WithCheckOrigin(wshub.AllowOrigins(...))",
+			"origin", origin, "host", r.Host)
+	}
+
+	return false
+}
+
+// shouldLogOriginReject reports whether enough time has passed since the last
+// rejected-origin warning to log another one.
+func (h *Hub) shouldLogOriginReject() bool {
+	now := time.Now().UnixNano()
+	last := h.lastOriginRejectLog.Load()
+	if now-last < int64(originRejectLogInterval) {
+		return false
+	}
+	// CompareAndSwap keeps concurrent rejections from each emitting a line.
+	return h.lastOriginRejectLog.CompareAndSwap(last, now)
 }
 
 // UpgradeConnection upgrades an HTTP connection to WebSocket.

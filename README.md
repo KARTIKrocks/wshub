@@ -120,7 +120,7 @@ config := wshub.Config{
     MaxMessageSize:    1024 * 1024,
     SendChannelSize:   512,
     EnableCompression: true,
-    CheckOrigin:       wshub.AllowAllOrigins,
+    CheckOrigin:       wshub.AllowOrigins("https://app.example.com"),
 }
 ```
 
@@ -136,21 +136,37 @@ config := wshub.DefaultConfig().
 
 ### Origin Checking
 
-```go
-// Allow all origins (default)
-config.CheckOrigin = wshub.AllowAllOrigins
+The default is `AllowSameOrigin`, which blocks cross-site WebSocket hijacking:
+without it, any page on any site can open an authenticated connection to your
+server using the visitor's cookies.
 
-// Allow same origin only
+```go
+// Same origin only (default)
 config.CheckOrigin = wshub.AllowSameOrigin
 
-// Allow specific origins
+// Allow specific origins — use this when your front-end is served from a
+// different host than the WebSocket endpoint
 config.CheckOrigin = wshub.AllowOrigins("https://example.com", "https://app.example.com")
 
 // Custom checker
 config.CheckOrigin = func(r *http.Request) bool {
     return strings.HasSuffix(r.Header.Get("Origin"), ".example.com")
 }
+
+// Disable the check entirely — development only
+config.CheckOrigin = wshub.AllowAllOrigins
 ```
+
+Requests without an `Origin` header are allowed by `AllowSameOrigin` and
+`AllowOrigins`, since non-browser clients (mobile apps, CLI tools,
+server-to-server) typically omit it. Browsers always send it, so the
+cross-site hijacking path stays closed. If your threat model requires
+rejecting originless requests, supply a custom checker.
+
+Rejected upgrades are counted under the `origin_rejected` error metric and
+logged (rate-limited to one line per minute) with the offending origin, so a
+front-end that needs allowlisting is easy to spot rather than surfacing as an
+unexplained `403`.
 
 ## Hub API
 
