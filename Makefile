@@ -6,7 +6,7 @@ GOIMPORTS_VERSION := v0.45.0
 SUBMODULES := adapter/redis adapter/nats prometheus
 EXAMPLE_MODULES := examples/multinode
 
-.PHONY: all setup deps work test test-v test-modules test-prometheus vet vet-modules lint lint-modules lint-fix fix build build-examples bench fuzz fmt cover clean ci loadtest
+.PHONY: all setup deps work tidy tidy-modules tidy-check test test-v test-modules test-prometheus vet vet-modules lint lint-modules lint-fix fix build build-examples bench fuzz fmt cover clean ci loadtest
 
 all: fmt vet vet-modules lint lint-modules test test-modules build build-examples
 
@@ -30,6 +30,41 @@ deps:
 ## does with `go mod edit -replace`, so local runs catch the same API drift.
 work:
 	@test -f go.work || go work init . $(SUBMODULES) $(EXAMPLE_MODULES)
+
+## Tidy go.mod/go.sum for the root module
+tidy:
+	go mod tidy
+
+## Tidy go.mod/go.sum for every nested module. Run this after bumping the wshub
+## pin in a submodule so go.sum records the new version.
+##
+## Unlike the other module targets this deliberately does not depend on `work`:
+## `go mod tidy` ignores the workspace, so it resolves wshub at the version each
+## go.mod pins and downloads it from the proxy. That is what consumers get, and
+## it is why a pin bumped to an unreleased tag fails here rather than silently
+## passing against the working tree.
+tidy-modules:
+	@for m in $(SUBMODULES) $(EXAMPLE_MODULES); do \
+		echo "==> tidy $$m"; \
+		(cd $$m && go mod tidy) || exit 1; \
+	done
+
+## Fail if any go.mod/go.sum is not tidy, without leaving the change behind.
+## Suitable for CI, where a stale go.sum should block the merge.
+tidy-check:
+	@status=$$(git status --porcelain -- go.mod go.sum $(addsuffix /go.mod,$(SUBMODULES) $(EXAMPLE_MODULES)) $(addsuffix /go.sum,$(SUBMODULES) $(EXAMPLE_MODULES))); \
+	if [ -n "$$status" ]; then \
+		echo "go.mod/go.sum already modified; commit or stash before running tidy-check"; \
+		exit 1; \
+	fi
+	@$(MAKE) --no-print-directory tidy tidy-modules
+	@if ! git diff --quiet -- '*go.mod' '*go.sum'; then \
+		echo "go.mod/go.sum are not tidy — run 'make tidy tidy-modules' and commit:"; \
+		git diff --stat -- '*go.mod' '*go.sum'; \
+		git checkout -- '*go.mod' '*go.sum'; \
+		exit 1; \
+	fi
+	@echo "all modules tidy"
 
 ## Run all tests with race detector
 test:
