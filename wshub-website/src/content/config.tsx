@@ -5,6 +5,7 @@ import { useVersion } from '../hooks/useVersion';
 export default function ConfigDocs() {
   const { minVersion } = useVersion();
   const v130 = minVersion('v1.3.0');
+  const v170 = minVersion('v1.7.0');
   return (
     <ModuleSection
       id="config"
@@ -17,7 +18,7 @@ export default function ConfigDocs() {
         'Configurable buffer sizes, timeouts, and message limits',
         'Per-message compression support',
         ...(v130 ? ['Opt-in write coalescing for high-throughput text broadcasts'] : []),
-        'Pluggable origin validation',
+        v170 ? 'Same-origin checking on by default' : 'Pluggable origin validation',
       ]}
     >
       {/* ── Default Config ── */}
@@ -40,6 +41,7 @@ export default function ConfigDocs() {
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">SendChannelSize</td><td className="py-2 text-text-muted">256</td></tr>
             <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">EnableCompression</td><td className="py-2 text-text-muted">false</td></tr>
             {v130 && <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">CoalesceWrites</td><td className="py-2 text-text-muted">false</td></tr>}
+            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">CheckOrigin</td><td className="py-2 text-text-muted">{v170 ? 'AllowSameOrigin' : 'AllowAllOrigins'}</td></tr>
           </tbody>
         </table>
       </div>
@@ -95,6 +97,24 @@ hub := wshub.NewHub(
 
       {/* ── Origin Checking ── */}
       <h3 id="config-origins" className="text-lg font-semibold text-text-heading mt-8 mb-2">Origin Checking</h3>
+      {v170 ? (
+        <p className="text-text-muted mb-3">
+          Since v1.7.0 the default is <span className="font-mono text-accent">AllowSameOrigin</span>.
+          Earlier versions defaulted to <span className="font-mono text-accent">AllowAllOrigins</span>,
+          which let any page on any site open an authenticated connection using the
+          visitor&apos;s cookies (cross-site WebSocket hijacking). If your front-end is served
+          from a different origin than the WebSocket endpoint, allowlist it with{' '}
+          <span className="font-mono text-accent">AllowOrigins</span> — otherwise those
+          upgrades are rejected with <span className="font-mono text-accent">403</span> and
+          an <span className="font-mono text-accent">origin_rejected</span> metric.
+        </p>
+      ) : (
+        <p className="text-text-muted mb-3">
+          This version defaults to <span className="font-mono text-accent">AllowAllOrigins</span>,
+          which accepts an upgrade from any origin. Set an explicit checker in production —
+          v1.7.0 changed the default to <span className="font-mono text-accent">AllowSameOrigin</span>.
+        </p>
+      )}
       <div className="overflow-x-auto mb-4">
         <table className="w-full text-sm">
           <thead>
@@ -104,23 +124,47 @@ hub := wshub.NewHub(
             </tr>
           </thead>
           <tbody>
-            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">AllowAllOrigins()</td><td className="py-2 text-text-muted">Allow connections from any origin</td></tr>
-            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">AllowSameOrigin()</td><td className="py-2 text-text-muted">Only allow same-origin connections</td></tr>
-            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">AllowOrigins(origins...)</td><td className="py-2 text-text-muted">Allow specific origins</td></tr>
+            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">AllowAllOrigins</td><td className="py-2 text-text-muted">Allow connections from any origin — development only</td></tr>
+            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">AllowSameOrigin</td><td className="py-2 text-text-muted">Only allow same-origin connections{v170 ? ' (the default)' : ''}</td></tr>
+            <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">AllowOrigins(origins...)</td><td className="py-2 text-text-muted">Allow specific origins, compared as full origin strings</td></tr>
           </tbody>
         </table>
       </div>
-      <CodeBlock code={`// Allow all origins (development)
-config.WithCheckOrigin(wshub.AllowAllOrigins())
+      <CodeBlock code={`// Same-origin only${v170 ? ' (the default — no call needed)' : ''}
+config.WithCheckOrigin(wshub.AllowSameOrigin)
 
-// Same-origin only
-config.WithCheckOrigin(wshub.AllowSameOrigin())
-
-// Specific origins
+// Specific origins — use this when your front-end is served from a
+// different host than the WebSocket endpoint
 config.WithCheckOrigin(wshub.AllowOrigins(
     "https://example.com",
     "https://app.example.com",
-))`} />
+))
+
+// Custom checker
+config.WithCheckOrigin(func(r *http.Request) bool {
+    return strings.HasSuffix(r.Header.Get("Origin"), ".example.com")
+})
+
+// Disable the check entirely — development only
+config.WithCheckOrigin(wshub.AllowAllOrigins)`} />
+      <p className="text-text-muted mt-3">
+        Requests with no <span className="font-mono text-accent">Origin</span> header are allowed
+        by both <span className="font-mono text-accent">AllowSameOrigin</span> and{' '}
+        <span className="font-mono text-accent">AllowOrigins</span>, since non-browser clients
+        (mobile apps, CLI tools, server-to-server) typically omit it. Browsers always send it,
+        so the cross-site hijacking path stays closed.
+      </p>
+      {v170 && (
+        <p className="text-text-muted mt-3">
+          <span className="font-mono text-accent">AllowSameOrigin</span> compares host and port,
+          not scheme, so <span className="font-mono text-accent">http://example.com</span> is
+          accepted by a server reachable at <span className="font-mono text-accent">example.com</span>{' '}
+          over https. A server behind a TLS-terminating proxy cannot see its own scheme, so
+          comparing it would reject the legitimate origins of every proxied deployment. Use{' '}
+          <span className="font-mono text-accent">AllowOrigins</span> if you need scheme-exact
+          matching.
+        </p>
+      )}
     </ModuleSection>
   );
 }

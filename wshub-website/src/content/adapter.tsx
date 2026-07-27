@@ -1,7 +1,11 @@
 import CodeBlock from '../components/CodeBlock';
 import ModuleSection from '../components/ModuleSection';
+import { useVersion } from '../hooks/useVersion';
 
 export default function AdapterDocs() {
+  const { minVersion } = useVersion();
+  const v160 = minVersion('v1.6.0');
+  const v170 = minVersion('v1.7.0');
   return (
     <ModuleSection
       id="adapter"
@@ -14,6 +18,8 @@ export default function AdapterDocs() {
         'Automatic deduplication via node IDs',
         'All broadcast and send methods relay transparently',
         'Local delivery is never blocked by adapter failures',
+        ...(v160 ? ['Observable unmarshal failures on the subscribe path'] : []),
+        ...(v170 ? ['Deterministic teardown — Close waits for subscriber goroutines'] : []),
       ]}
     >
       {/* ── Adapter Interface ── */}
@@ -129,6 +135,46 @@ hub := wshub.NewHub(
 )
 go hub.Run()`} />
 
+      {/* ── Adapter Options ── */}
+      {v160 && (
+        <>
+          <h3 id="adapter-options" className="text-lg font-semibold text-text-heading mt-8 mb-2">Adapter Options</h3>
+          <div className="overflow-x-auto mb-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left">
+                  <th className="py-2 pr-4 text-text-heading font-semibold">Option</th>
+                  <th className="py-2 text-text-heading font-semibold">Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithChannel(name)</td><td className="py-2 text-text-muted">Redis only — Pub/Sub channel. Default <span className="font-mono">wshub:messages</span></td></tr>
+                <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithSubject(name)</td><td className="py-2 text-text-muted">NATS only — subject. Default <span className="font-mono">wshub.messages</span></td></tr>
+                <tr className="border-b border-border/50"><td className="py-2 pr-4 font-mono text-accent whitespace-nowrap">WithUnmarshalErrorHandler(fn)</td><td className="py-2 text-text-muted">Observe messages that fail JSON unmarshaling in the subscribe path</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p className="text-text-muted mb-3">
+            Added in v1.6.0. A malformed payload on the bus — a stray publisher, a
+            partial write, a version mismatch between nodes — is dropped by the subscribe
+            path. Without a handler that happens silently, so a node quietly stops relaying
+            with nothing in the logs. Both adapters accept the same option:
+          </p>
+          <CodeBlock code={`adapter := wshubredis.New(rdb,
+    wshubredis.WithUnmarshalErrorHandler(func(data []byte, err error) {
+        log.Printf("wshub: dropping malformed adapter message: %v (%d bytes)", err, len(data))
+    }),
+)
+
+// Identical on the NATS adapter:
+adapter := wshubnats.New(nc,
+    wshubnats.WithUnmarshalErrorHandler(func(data []byte, err error) {
+        log.Printf("wshub: dropping malformed adapter message: %v (%d bytes)", err, len(data))
+    }),
+)`} />
+        </>
+      )}
+
       {/* ── How It Works ── */}
       <h3 id="adapter-how" className="text-lg font-semibold text-text-heading mt-8 mb-2">How It Works</h3>
       <p className="text-text-muted mb-3">
@@ -144,6 +190,57 @@ hub.SendToClient(clientID, []byte("hi"))          // finds client across nodes
 
 // Shutdown closes the adapter before waiting on goroutines
 hub.Shutdown(ctx)`} />
+
+      {/* ── Lifecycle ── */}
+      {v170 && (
+        <>
+          <h3 id="adapter-lifecycle" className="text-lg font-semibold text-text-heading mt-8 mb-2">Lifecycle</h3>
+          <p className="text-text-muted mb-3">
+            The bundled adapters guarantee the following teardown behaviour as of{' '}
+            <span className="font-mono text-accent">adapter/redis v0.2.2</span> and{' '}
+            <span className="font-mono text-accent">adapter/nats v0.2.2</span>. Earlier
+            releases could deadlock in <span className="font-mono text-accent">Close</span>{' '}
+            after a <span className="font-mono text-accent">Subscribe</span>, so upgrade both
+            alongside wshub v1.7.0.
+          </p>
+          <ul className="text-text-muted mb-4 list-disc pl-5 space-y-1">
+            <li>
+              <span className="font-mono text-accent">Close</span> waits for the subscriber
+              goroutine to finish, so no delivery is in flight once it returns.
+            </li>
+            <li>
+              <span className="font-mono text-accent">Close</span> is idempotent — calling it
+              twice returns <span className="font-mono text-accent">nil</span> the second time.
+              <span className="font-mono text-accent"> Hub.Shutdown</span> already closes a
+              configured adapter, so an explicit call is only needed for an adapter you own
+              outside a hub.
+            </li>
+            <li>
+              After <span className="font-mono text-accent">Close</span>, both{' '}
+              <span className="font-mono text-accent">Publish</span> and{' '}
+              <span className="font-mono text-accent">Subscribe</span> return{' '}
+              <span className="font-mono text-accent">ErrClosed</span> rather than silently
+              doing nothing.
+            </li>
+            <li>
+              Calling <span className="font-mono text-accent">Subscribe</span> again replaces
+              the previous subscription and releases its goroutine.
+            </li>
+            <li>
+              Cancelling the context passed to <span className="font-mono text-accent">Subscribe</span>{' '}
+              stops delivery.
+            </li>
+          </ul>
+          <CodeBlock code={`// A hub-owned adapter needs no explicit Close — Shutdown does it:
+hub.Shutdown(ctx)
+
+// A standalone adapter is yours to close, before the underlying
+// client goes away:
+adapter := wshubredis.New(rdb)
+defer rdb.Close()
+defer adapter.Close() // runs first: waits for the subscriber goroutine`} />
+        </>
+      )}
     </ModuleSection>
   );
 }

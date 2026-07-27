@@ -96,7 +96,9 @@ const sections: SectionItem[] = [
       { id: 'adapter-message', label: 'Adapter Message' },
       { id: 'adapter-redis', label: 'Redis Adapter' },
       { id: 'adapter-nats', label: 'NATS Adapter' },
+      { id: 'adapter-options', label: 'Adapter Options', minVersion: 'v1.6.0' },
       { id: 'adapter-how', label: 'How It Works' },
+      { id: 'adapter-lifecycle', label: 'Lifecycle', minVersion: 'v1.7.0' },
     ],
   },
   {
