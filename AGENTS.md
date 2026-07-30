@@ -106,9 +106,12 @@ make cover            # coverage report -> coverage.html
 - **One branch per change.** Never add follow-up commits to a branch that has
   already been merged — branch again off updated `main`.
 - CI (`.github/workflows/ci.yml`) tests the root module on Go 1.22–1.26, tests
-  each submodule at its own minimum and at the current release, lints all four
-  Go modules, and uploads coverage to Codecov. `codecov.yml` ignores
-  `examples/`, `cmd/` and the website, so coverage reflects library code only.
+  each submodule at its own minimum and at the current release, and uploads
+  coverage to Codecov. Linting covers the four library modules — root,
+  `adapter/redis`, `adapter/nats`, `prometheus` — matching `make lint-modules`;
+  `examples/multinode` is only built, since it ships no tests and exists to
+  catch API drift. `codecov.yml` ignores `examples/`, `cmd/` and the website,
+  so coverage reflects library code only.
 
 ## Examples & load testing
 
