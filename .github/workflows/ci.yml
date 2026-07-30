@@ -9,13 +9,21 @@ on:
 permissions:
   contents: read
 
+# Supersede an in-flight run when a PR is pushed to again. Runs on main are
+# never cancelled — coverage and bench there are the recorded baseline.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     name: test (root, go${{ matrix.go-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
-        go-version: ["1.22", "1.23", "1.24", "1.25", "1.26"]
+        go-version: ["1.22", "1.26"]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -35,6 +43,7 @@ jobs:
   submodules:
     name: test (${{ matrix.module }}, go${{ matrix.go-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -65,6 +74,7 @@ jobs:
   examples:
     name: build (examples/multinode)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -82,6 +92,7 @@ jobs:
 
   coverage:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -98,6 +109,7 @@ jobs:
   lint:
     name: lint (${{ matrix.module }})
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -119,8 +131,39 @@ jobs:
           args: --timeout=5m
           working-directory: ${{ matrix.module }}
 
+  # THIS IS THE ONLY JOB THAT SHOULD BE A REQUIRED STATUS CHECK.
+  #
+  # Requiring the matrix jobs directly is brittle: their check names embed the
+  # matrix values, so adding a Go version or renaming a job silently orphans the
+  # required context and every PR then blocks forever on a check that no longer
+  # exists. Gating on one stable name instead means the matrix is free to change.
+  #
+  # `if: always()` is load-bearing. Without it this job is skipped when a
+  # dependency fails, and GitHub counts a skipped required check as passing —
+  # a failing build would report mergeable.
+  ci:
+    name: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    needs: [test, submodules, examples, coverage, lint]
+    steps:
+      - name: Verify every job succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.value.result)\t\(.key)"'
+          if echo "$NEEDS" | jq -e 'any(.[]; .result != "success")' >/dev/null; then
+            echo "::error::one or more CI jobs did not succeed"
+            exit 1
+          fi
+          echo "all jobs succeeded"
+
+  # Not part of the `ci` gate: this runs only on main, so on a pull request it
+  # is skipped and would drag the gate down with it.
   bench:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v7

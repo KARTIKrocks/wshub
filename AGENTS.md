@@ -21,6 +21,13 @@ must be built/tested independently:
 - `prometheus/` — official Prometheus metrics subpackage.
 - `adapter/redis/` — Redis Pub/Sub adapter for multi-node scaling.
 - `adapter/nats/` — NATS core Pub/Sub adapter for multi-node scaling.
+- `examples/multinode/` — its own module because it depends on `adapter/redis`.
+  It ships no tests; CI builds it to catch API drift.
+
+The submodules are **versioned independently** of the core package (the adapters
+are on their own `v0.2.x` line) and each pins a published `wshub` version in its
+`go.mod`. See the workspace note under *Build, test, and lint* for how that pin
+is replaced with the working tree.
 
 The core package ships **no adapter implementations** on purpose — adapters live
 in submodules so consumers don't pull in unwanted dependencies. When touching the
@@ -60,7 +67,10 @@ make cover            # coverage report -> coverage.html
 - Tests **must pass with the race detector** (`-race`). Concurrency correctness
   is a first-class requirement here.
 - `make lint` / `make setup` require `golangci-lint` v2 and `goimports`
-  (pinned versions in the `Makefile`).
+  (pinned versions in the `Makefile`). The ruleset in `.golangci.yml` is clean
+  across every module — `gosec`, `errorlint`, `bodyclose`, `noctx`,
+  `contextcheck` and `perfsprint` are all enabled on library code, and relaxed
+  only for `_test.go`, `examples/` and `cmd/`.
 - The root module's `./...` stops at nested `go.mod` boundaries, so the module
   targets above are what cover the adapters and the Prometheus collector. They
   resolve `wshub` through a gitignored `go.work` pointing at the working tree,
@@ -71,7 +81,11 @@ make cover            # coverage report -> coverage.html
 
 - **Go 1.22+** for the core module (submodules pin newer versions in their `go.mod`).
 - Follow standard Go style; `gofmt` + `goimports` are mandatory (`make fmt`).
-- **All exported types and functions must have doc comments.**
+- **New exported types and functions must have doc comments** starting with the
+  identifier name — they are the pkg.go.dev reference. This is not yet enforced
+  by lint (`revive`'s `exported` rule is disabled in `.golangci.yml`) because
+  some existing methods in `metrics.go`/`logger.go` predate the rule; do not add
+  to the backlog.
 - Keep the hot path zero-allocation — benchmarks in `benchmark_test.go` guard
   dispatch performance. Verify with `make bench` if you touch dispatch/send code.
 - **Never `close(client.send)` in library code.** Producers (`Hub.trySendErr`,
@@ -89,6 +103,18 @@ make cover            # coverage report -> coverage.html
 
 - Keep changes focused on a single concern; include tests.
 - Ensure `make all` (or at least `make ci`) passes before opening a PR.
+- **One branch per change.** Never add follow-up commits to a branch that has
+  already been merged — branch again off updated `main`.
+- CI (`.github/workflows/ci.yml`) tests the root module at the `go.mod` floor
+  (1.22) and the current release (1.26), tests each submodule at its own minimum
+  and at the current release, and uploads coverage to Codecov. The `ci` job is
+  an aggregate gate and is meant to be the **only** required status check —
+  requiring the matrix jobs directly orphans the required context whenever a
+  matrix value changes. Linting covers the four library modules — root,
+  `adapter/redis`, `adapter/nats`, `prometheus` — matching `make lint-modules`;
+  `examples/multinode` is only built, since it ships no tests and exists to
+  catch API drift. `codecov.yml` ignores `examples/`, `cmd/` and the website,
+  so coverage reflects library code only.
 
 ## Examples & load testing
 

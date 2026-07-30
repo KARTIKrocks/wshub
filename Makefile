@@ -1,5 +1,5 @@
 GOLANGCI_LINT_VERSION := v2.12.2
-GOIMPORTS_VERSION := v0.45.0
+GOIMPORTS_VERSION := v0.48.0
 
 # Nested modules. Each has its own go.mod, so the root module's ./... does not
 # reach them — they need to be built and tested explicitly.

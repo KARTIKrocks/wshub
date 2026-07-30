@@ -1,5 +1,11 @@
 version: "2"
 
+# Report every occurrence. The defaults (max-same-issues: 3) hide duplicates,
+# which makes a lint failure look smaller than it is.
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
 linters:
   enable:
     - errcheck
@@ -12,6 +18,34 @@ linters:
     - gocyclo
     - revive
     - prealloc
+    # Security scanning matters for a package that terminates untrusted
+    # network connections.
+    - gosec
+    # Error-handling discipline: %w-wrapped errors must be compared with
+    # errors.Is/As, and sentinel errors must be named Err*.
+    - errorlint
+    - errname
+    - nilerr
+    - nilnesserr
+    # Concurrency and context correctness — the core invariants of this hub.
+    - contextcheck
+    - fatcontext
+    - noctx
+    - bodyclose
+    - durationcheck
+    # Hot path is expected to stay allocation-free (see benchmark_test.go).
+    - perfsprint
+    - makezero
+    - wastedassign
+    - unconvert
+    # Correctness footguns.
+    - asasalint
+    - reassign
+    - usestdlibvars
+    - copyloopvar
+    - intrange
+    # Keep //nolint directives specific and explained.
+    - nolintlint
   settings:
     gocyclo:
       min-complexity: 15
@@ -19,6 +53,12 @@ linters:
       rules:
         - name: exported
           disabled: true
+    errcheck:
+      # An unchecked type assertion panics; deliberate `_ =` discards still pass.
+      check-type-assertions: true
+    nolintlint:
+      require-explanation: true
+      require-specific: true
   exclusions:
     paths:
       - wshub-website/
@@ -29,6 +69,27 @@ linters:
       - linters:
           - errcheck
         path: examples/
+      # Tests may assert on unwrapped errors, ignore teardown errors, skip
+      # response-body cleanup, and build requests without a context; none of
+      # that ships to consumers.
+      - linters:
+          - bodyclose
+          - errorlint
+          - gosec
+          - intrange
+          - noctx
+          - perfsprint
+        path: _test\.go
+      # Examples are illustrative and the load generator is a dev tool; neither
+      # is part of the public API surface.
+      - linters:
+          - gosec
+          - perfsprint
+        path: examples/
+      - linters:
+          - bodyclose
+          - gosec
+        path: cmd/
 
 formatters:
   enable:
