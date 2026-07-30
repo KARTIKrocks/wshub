@@ -105,9 +105,12 @@ make cover            # coverage report -> coverage.html
 - Ensure `make all` (or at least `make ci`) passes before opening a PR.
 - **One branch per change.** Never add follow-up commits to a branch that has
   already been merged — branch again off updated `main`.
-- CI (`.github/workflows/ci.yml`) tests the root module on Go 1.22–1.26, tests
-  each submodule at its own minimum and at the current release, and uploads
-  coverage to Codecov. Linting covers the four library modules — root,
+- CI (`.github/workflows/ci.yml`) tests the root module at the `go.mod` floor
+  (1.22) and the current release (1.26), tests each submodule at its own minimum
+  and at the current release, and uploads coverage to Codecov. The `ci` job is
+  an aggregate gate and is meant to be the **only** required status check —
+  requiring the matrix jobs directly orphans the required context whenever a
+  matrix value changes. Linting covers the four library modules — root,
   `adapter/redis`, `adapter/nats`, `prometheus` — matching `make lint-modules`;
   `examples/multinode` is only built, since it ships no tests and exists to
   catch API drift. `codecov.yml` ignores `examples/`, `cmd/` and the website,
