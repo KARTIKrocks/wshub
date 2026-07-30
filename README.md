@@ -10,7 +10,7 @@
 
 A production-ready, scalable WebSocket package for Go with support for rooms, broadcasting, multi-node clustering, middleware, hooks, and extensibility.
 
-**[Documentation](https://kartikrocks.github.io/wshub/)** | **[API Reference](https://pkg.go.dev/github.com/KARTIKrocks/wshub)**
+**[Documentation](https://kartikrocks.github.io/wshub/)** | **[API Reference](https://pkg.go.dev/github.com/KARTIKrocks/wshub)** | **[Changelog](CHANGELOG.md)**
 
 ## Features
 
@@ -29,28 +29,9 @@ A production-ready, scalable WebSocket package for Go with support for rooms, br
 - **Global Counts**: Cluster-wide client and room counts via presence gossip
 - **Zero Business Logic**: Pure infrastructure, bring your own logic
 
-## Performance Highlights
-
-Hot-path operations are zero-allocation; the dispatch loop iterates a lock-free
-snapshot. The numbers below are **in-process dispatch overhead** measured with
-mock clients — they show how fast the hub iterates its registry and pushes to
-client channels, _not_ end-to-end delivery latency over real WebSocket
-connections. For end-to-end numbers see [Real-world load tests](#real-world-load-tests).
-
-| Operation                | Scale             | Time    | Allocs |
-| ------------------------ | ----------------- | ------- | ------ |
-| `SendToClient`           | 1,000,000 clients | 130 ns  | 0      |
-| `SendToUser`             | 1,000,000 users   | 192 ns  | 1      |
-| `GetClient`              | 1,000 clients     | 17.7 ns | 0      |
-| `GlobalClientCount`      | 500 nodes         | 4.2 μs  | 0      |
-| Middleware chain (built) | 3 middlewares     | 14.3 ns | 0      |
-| `Broadcast` dispatch     | 1,000,000 clients | 263 ms  | 0      |
-
-> The `Broadcast` row measures how long the hub takes to enqueue a message to
-> 1M client channels — actual delivery to remote clients is bounded by TCP,
-> writePump throughput, and the Go scheduler. See full benchmarks for detail.
-
 ## Installation
+
+Requires **Go 1.22+**.
 
 ```bash
 go get github.com/KARTIKrocks/wshub
@@ -65,715 +46,80 @@ import (
     "context"
     "log"
     "net/http"
+    "os"
+    "os/signal"
+    "syscall"
     "time"
 
     "github.com/KARTIKrocks/wshub"
 )
 
 func main() {
-    // Create hub with configuration
-    config := wshub.DefaultConfig().
-        WithMaxMessageSize(1024 * 1024).
-        WithCompression(true)
-
     hub := wshub.NewHub(
-        wshub.WithConfig(config),
         wshub.WithMessageHandler(func(client *wshub.Client, msg *wshub.Message) error {
             log.Printf("Message from %s: %s", client.ID, msg.Text())
-            return client.Send(msg.Data)
+            return client.Send(msg.Data) // echo back
         }),
     )
 
-    // Start the hub
     go hub.Run()
 
-    // Set up HTTP handler
     http.HandleFunc("/ws", hub.HandleHTTP())
+    http.HandleFunc("/healthz", hub.HealthHandler())
+    http.HandleFunc("/readyz", hub.ReadyHandler())
 
-    log.Println("Server starting on :8080")
-    if err := http.ListenAndServe(":8080", nil); err != nil {
-        log.Fatal(err)
-    }
+    srv := &http.Server{Addr: ":8080"}
+    go func() {
+        log.Println("Listening on :8080")
+        if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+            log.Fatal(err)
+        }
+    }()
 
-    // Graceful drain + shutdown
+    quit := make(chan os.Signal, 1)
+    signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+    <-quit
+
+    // Two-phase shutdown for zero-downtime deploys
     ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
     defer cancel()
-    hub.Drain(ctx)    // stop new connections, wait for existing ones
+    hub.Drain(ctx)    // stop new connections, let existing ones finish
     hub.Shutdown(ctx) // force-close anything remaining
+    srv.Shutdown(ctx)
 }
 ```
 
-## Configuration
-
-### Basic Configuration
-
-```go
-config := wshub.DefaultConfig()
-
-// Or customize
-config := wshub.Config{
-    ReadBufferSize:    4096,
-    WriteBufferSize:   4096,
-    WriteWait:         10 * time.Second,
-    PongWait:          60 * time.Second,
-    PingPeriod:        54 * time.Second,
-    MaxMessageSize:    1024 * 1024,
-    SendChannelSize:   512,
-    EnableCompression: true,
-    CheckOrigin:       wshub.AllowOrigins("https://app.example.com"),
-}
-```
-
-### Builder Pattern
-
-```go
-config := wshub.DefaultConfig().
-    WithBufferSizes(4096, 4096).
-    WithMaxMessageSize(1024 * 1024).
-    WithCompression(true).
-    WithCheckOrigin(wshub.AllowOrigins("https://example.com"))
-```
-
-### Origin Checking
-
-The default is `AllowSameOrigin`, which blocks cross-site WebSocket hijacking:
-without it, any page on any site can open an authenticated connection to your
-server using the visitor's cookies.
-
-```go
-// Same origin only (default)
-config.CheckOrigin = wshub.AllowSameOrigin
-
-// Allow specific origins — use this when your front-end is served from a
-// different host than the WebSocket endpoint
-config.CheckOrigin = wshub.AllowOrigins("https://example.com", "https://app.example.com")
-
-// Custom checker
-config.CheckOrigin = func(r *http.Request) bool {
-    return strings.HasSuffix(r.Header.Get("Origin"), ".example.com")
-}
-
-// Disable the check entirely — development only
-config.CheckOrigin = wshub.AllowAllOrigins
-```
-
-`AllowSameOrigin` compares host and port, not scheme, so `http://example.com`
-is accepted by a server reachable at `example.com` over https. A server behind
-a TLS-terminating proxy cannot see its own scheme, so comparing it would reject
-the legitimate origins of every proxied deployment. Use `AllowOrigins`, which
-compares the full origin string, if you need scheme-exact matching.
-
-Requests without an `Origin` header are allowed by `AllowSameOrigin` and
-`AllowOrigins`, since non-browser clients (mobile apps, CLI tools,
-server-to-server) typically omit it. Browsers always send it, so the
-cross-site hijacking path stays closed. If your threat model requires
-rejecting originless requests, supply a custom checker.
-
-Rejected upgrades are counted under the `origin_rejected` error metric and
-logged with the offending origin, so a front-end that needs allowlisting is
-easy to spot rather than surfacing as an unexplained `403`.
-
-Because any unauthenticated client can force a failed handshake, all
-handshake-failure log lines are rate-limited to one per minute. Metrics
-(`origin_rejected`, `upgrade_failed`) are incremented unconditionally, so use
-those for exact counts rather than counting log lines.
-
-## Hub API
-
-### Client Management
-
-```go
-// Get all clients
-clients := hub.Clients()
-count := hub.ClientCount()
-
-// Find client
-client, ok := hub.GetClient(clientID)
-client, ok := hub.GetClientByUserID(userID)
-clients := hub.GetClientsByUserID(userID)
-```
-
-### Broadcasting
-
-```go
-// Broadcast to all
-hub.Broadcast([]byte("Hello everyone"))
-hub.BroadcastText("Hello everyone")
-hub.BroadcastJSON(map[string]string{"message": "Hello"})
-
-// Broadcast pre-encoded JSON (zero-alloc, ideal for fan-out)
-data, _ := json.Marshal(map[string]string{"message": "Hello"})
-hub.BroadcastRawJSON(data)
-
-// Broadcast with context
-ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-hub.BroadcastWithContext(ctx, data)
-
-// Broadcast except one client
-hub.BroadcastExcept(data, excludeClient)
-
-// Send to specific client
-hub.SendToClient(clientID, data)
-
-// Send to all connections of a user
-hub.SendToUser(userID, data)
-```
-
-### Rooms
-
-```go
-// Join/leave rooms
-hub.JoinRoom(client, "general")
-hub.LeaveRoom(client, "general")
-hub.LeaveAllRooms(client)
-
-// Broadcast to room
-hub.BroadcastToRoom("general", data)
-hub.BroadcastToRoomExcept("general", data, exceptClient)
-
-// Room info
-clients := hub.RoomClients("general")
-count := hub.RoomCount("general")
-rooms := hub.RoomNames()
-exists := hub.RoomExists("general")
-```
-
-## Client API
-
-```go
-// Client properties
-client.ID       // Unique client ID
-
-// Set user ID
-client.SetUserID("user-123")
-userID := client.GetUserID()
-
-// Metadata
-client.SetMetadata("role", "admin")
-role, ok := client.GetMetadata("role")
-client.DeleteMetadata("role")
-
-// Send messages
-client.Send([]byte("Hello"))
-client.SendText("Hello")
-client.SendJSON(map[string]string{"message": "Hello"})
-client.SendRawJSON(preEncodedJSON) // skip marshaling
-client.SendBinary(data)
-client.SendWithContext(ctx, data)
-
-// Close connection
-client.Close()
-client.CloseWithCode(websocket.CloseNormalClosure, "Goodbye")
-
-// Room membership
-rooms := client.Rooms()
-inRoom := client.InRoom("general")
-count := client.RoomCount()
-
-// Status
-closed := client.IsClosed()
-closedAt := client.ClosedAt()
-
-// Client-specific handlers
-client.OnMessage(func(c *wshub.Client, msg *wshub.Message) {
-    // Handle message
-})
-
-client.OnClose(func(c *wshub.Client) {
-    // Handle close
-})
-
-client.OnError(func(c *wshub.Client, err error) {
-    // Handle error
-})
-```
-
-## Hooks System
-
-```go
-hub := wshub.NewHub(
-    wshub.WithHooks(wshub.Hooks{
-        // Before connection upgrade
-        BeforeConnect: func(r *http.Request) error {
-            token := r.Header.Get("Authorization")
-            if !validateToken(token) {
-                return wshub.ErrAuthenticationFailed
-            }
-            return nil
-        },
-
-        // After successful connection
-        AfterConnect: func(client *wshub.Client) {
-            log.Printf("Client connected: %s", client.ID)
-        },
-
-        // Before message processing
-        BeforeMessage: func(client *wshub.Client, msg *wshub.Message) (*wshub.Message, error) {
-            if len(msg.Data) > 1000 {
-                return nil, errors.New("message too large")
-            }
-            return msg, nil
-        },
-
-        // After message processing
-        AfterMessage: func(client *wshub.Client, msg *wshub.Message, err error) {
-            if err != nil {
-                log.Printf("Message error: %v", err)
-            }
-        },
-
-        // Before room join
-        BeforeRoomJoin: func(client *wshub.Client, room string) error {
-            if !canJoinRoom(client, room) {
-                return wshub.ErrUnauthorized
-            }
-            return nil
-        },
-
-        // After room join
-        AfterRoomJoin: func(client *wshub.Client, room string) {
-            hub.BroadcastToRoomExcept(room,
-                []byte(fmt.Sprintf("%s joined", client.ID)),
-                client,
-            )
-        },
-
-        // On error
-        OnError: func(client *wshub.Client, err error) {
-            log.Printf("Client error: %v", err)
-        },
-    }),
-)
-```
-
-## Middleware System
-
-```go
-// Create middleware chain
-chain := wshub.NewMiddlewareChain(handleMessage).
-    Use(wshub.RecoveryMiddleware(logger)).
-    Use(wshub.LoggingMiddleware(logger)).
-    Use(wshub.MetricsMiddleware(metrics)).
-    Build()
-
-// Use in message handler
-hub := wshub.NewHub(
-    wshub.WithMessageHandler(chain.Execute),
-)
-```
-
-### Built-in Middlewares
-
-```go
-// Logging
-wshub.LoggingMiddleware(logger)
-
-// Panic recovery
-wshub.RecoveryMiddleware(logger)
-
-// Metrics
-wshub.MetricsMiddleware(metrics)
-```
-
-### Custom Middleware
-
-```go
-func RateLimitMiddleware(limiter RateLimiter) wshub.Middleware {
-    return func(next wshub.HandlerFunc) wshub.HandlerFunc {
-        return func(client *wshub.Client, msg *wshub.Message) error {
-            if !limiter.Allow(client.ID) {
-                return wshub.ErrRateLimitExceeded
-            }
-            return next(client, msg)
-        }
-    }
-}
-
-func AuthMiddleware(auth AuthService) wshub.Middleware {
-    return func(next wshub.HandlerFunc) wshub.HandlerFunc {
-        return func(client *wshub.Client, msg *wshub.Message) error {
-            if client.GetUserID() == "" {
-                return wshub.ErrUnauthorized
-            }
-            return next(client, msg)
-        }
-    }
-}
-```
-
-## Logging
-
-```go
-// Implement the Logger interface
-type ZapLogger struct {
-    logger *zap.Logger
-}
-
-func (l *ZapLogger) Debug(msg string, args ...any) {
-    l.logger.Sugar().Debugw(msg, args...)
-}
-
-func (l *ZapLogger) Info(msg string, args ...any) {
-    l.logger.Sugar().Infow(msg, args...)
-}
-
-func (l *ZapLogger) Warn(msg string, args ...any) {
-    l.logger.Sugar().Warnw(msg, args...)
-}
-
-func (l *ZapLogger) Error(msg string, args ...any) {
-    l.logger.Sugar().Errorw(msg, args...)
-}
-
-// Use it
-hub := wshub.NewHub(wshub.WithLogger(&ZapLogger{logger}))
-```
-
-## Metrics
-
-Use the official Prometheus subpackage for production metrics:
-
-```go
-import (
-    wshubprom "github.com/KARTIKrocks/wshub/prometheus"
-    "github.com/prometheus/client_golang/prometheus"
-    "github.com/prometheus/client_golang/prometheus/promhttp"
-)
-
-reg := prometheus.NewRegistry()
-collector := wshubprom.New(wshubprom.WithRegistry(reg))
-hub := wshub.NewHub(wshub.WithMetrics(collector))
-go hub.Run()
-
-http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
-```
-
-Or implement the `MetricsCollector` interface yourself (e.g. for StatsD):
-
-```go
-type MyMetrics struct{}
-
-func (m *MyMetrics) IncrementConnections()                          {}
-func (m *MyMetrics) DecrementConnections()                          {}
-func (m *MyMetrics) IncrementMessagesReceived()                     {}
-func (m *MyMetrics) IncrementMessagesSent(count int)                {}
-func (m *MyMetrics) IncrementMessagesDropped()                      {}
-func (m *MyMetrics) RecordMessageSize(size int)                     {}
-func (m *MyMetrics) RecordLatency(d time.Duration)                  {}
-func (m *MyMetrics) RecordBroadcastDuration(d time.Duration)        {}
-func (m *MyMetrics) IncrementErrors(errorType string)               {}
-func (m *MyMetrics) IncrementRoomJoins()                            {}
-func (m *MyMetrics) IncrementRoomLeaves()                           {}
-func (m *MyMetrics) IncrementRooms()                                {}
-func (m *MyMetrics) DecrementRooms()                                {}
-
-hub := wshub.NewHub(wshub.WithMetrics(&MyMetrics{}))
-```
-
-For development, use `DebugMetrics` for an in-memory snapshot:
-
-```go
-metrics := wshub.NewDebugMetrics()
-hub := wshub.NewHub(wshub.WithMetrics(metrics))
-
-// Later
-stats := metrics.Stats()
-fmt.Println(stats.ActiveConnections, stats.TotalMessagesRecv, stats.AvgBroadcast)
-```
-
-## Limits
-
-```go
-limits := wshub.DefaultLimits().
-    WithMaxConnections(10000).
-    WithMaxConnectionsPerUser(5).
-    WithMaxRoomsPerClient(10).
-    WithMaxClientsPerRoom(100).
-    WithMaxMessageRate(100)
-
-hub := wshub.NewHub(wshub.WithLimits(limits))
-```
-
-## Multi-Node Scaling
-
-Scale horizontally by connecting multiple hub instances through a shared message bus. All broadcasts and targeted sends are automatically relayed across nodes.
-
-```go
-import wshubredis "github.com/KARTIKrocks/wshub/adapter/redis"
-
-rdb := goredis.NewClient(&goredis.Options{Addr: "localhost:6379"})
-adapter := wshubredis.New(rdb)
-
-hub := wshub.NewHub(
-    wshub.WithAdapter(adapter),
-    wshub.WithNodeID("pod-web-1"), // optional: stable ID for debugging
-)
-go hub.Run()
-```
-
-### Available Adapters
-
-| Adapter | Install                                             | Best For                     |
-| ------- | --------------------------------------------------- | ---------------------------- |
-| Redis   | `go get github.com/KARTIKrocks/wshub/adapter/redis` | Most deployments, easy setup |
-| NATS    | `go get github.com/KARTIKrocks/wshub/adapter/nats`  | Low-latency, high-throughput |
-| Custom  | Implement `wshub.Adapter` interface                 | Any message bus              |
-
-Adapters are separate Go modules -- importing the core `wshub` package never pulls in Redis or NATS dependencies.
-
-### Adapter Lifecycle
-
-Close the adapter as part of your shutdown sequence, after the hub has stopped:
-
-```go
-hub.Drain(ctx)
-hub.Shutdown(ctx)
-adapter.Close() // stops the subscriber and releases its goroutines
-```
-
-- `Close` returns once the adapter's subscriber goroutines have exited, so no
-  goroutine started by `Subscribe` outlives it.
-- `Close` does **not** close the underlying Redis client or NATS connection —
-  that stays the caller's responsibility.
-- `Close` is idempotent. After it, `Publish` and `Subscribe` both return the
-  adapter's `ErrClosed`.
-- Calling `Subscribe` again replaces the previous subscription, releasing it
-  first; the replaced handler stops receiving.
-- Cancelling the context passed to `Subscribe` stops delivery, as an
-  alternative to `Close`.
-
-### What Gets Relayed Across Nodes
-
-| Operation                                                                            | Cross-Node         |
-| ------------------------------------------------------------------------------------ | ------------------ |
-| `Broadcast`, `BroadcastBinary`, `BroadcastText`, `BroadcastJSON`, `BroadcastRawJSON` | Yes                |
-| `BroadcastExcept`                                                                    | Yes                |
-| `BroadcastToRoom`, `BroadcastToRoomExcept`                                           | Yes                |
-| `SendToUser`                                                                         | Yes                |
-| `SendToClient`                                                                       | Yes                |
-| `JoinRoom`, `LeaveRoom`                                                              | No (local per hub) |
-| `GetClient`, `ClientCount`                                                           | No (local per hub) |
-
-### Global Counts (Presence)
-
-Enable presence gossip to get cluster-wide totals:
-
-```go
-hub := wshub.NewHub(
-    wshub.WithAdapter(adapter),
-    wshub.WithPresence(5 * time.Second), // publish stats every 5s
-)
-
-hub.GlobalClientCount()          // total across all nodes
-hub.GlobalRoomCount("general")   // room members across all nodes
-```
-
-Nodes that miss 3 consecutive heartbeats are automatically evicted from the totals.
-
-## Graceful Draining
-
-For zero-downtime rolling deploys (e.g. Kubernetes), call `Drain` before `Shutdown`. Drain stops accepting new connections (HTTP 503) while letting existing connections finish their in-flight messages. Idle connections are proactively closed after the drain timeout.
-
-```go
-// preStop / SIGTERM handler
-ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-defer cancel()
-hub.Drain(ctx)    // stop new connections, wait for existing ones
-hub.Shutdown(ctx) // force-close anything remaining
-```
-
-### Configuration
-
-```go
-hub := wshub.NewHub(
-    // Configure idle connection reaper timeout (default: 30s).
-    // Connections idle for this duration during drain are closed with CloseGoingAway.
-    // Set to 0 to disable the reaper entirely.
-    wshub.WithDrainTimeout(15 * time.Second),
-)
-```
-
-### Health & Readiness Probes
-
-```go
-// Drop-in HTTP handlers — respond with JSON and correct status codes
-http.Handle("/healthz", hub.HealthHandler()) // 200 while Run() is alive, else 503
-http.Handle("/readyz", hub.ReadyHandler())   // 200 while running, 503 when draining/stopped
-
-// Programmatic access
-hs := hub.Health()  // HealthStatus{Alive, Ready, State, Uptime, Clients}
-hub.Alive()         // true only while Run() goroutine is executing
-hub.Ready()         // true when alive and in StateRunning
-hub.Uptime()        // time.Duration since Run() started (0 if not started or exited)
-```
-
-## Backpressure Control
-
-When a client's send buffer is full, configure how messages are handled:
-
-```go
-hub := wshub.NewHub(
-    // DropNewest (default): discard the new message
-    // DropOldest: evict the oldest queued message to make room
-    wshub.WithDropPolicy(wshub.DropOldest),
-
-    wshub.WithHooks(wshub.Hooks{
-        OnSendDropped: func(client *wshub.Client, data []byte) {
-            log.Printf("dropped %d bytes for client %s", len(data), client.ID)
-            // Options: disconnect slow client, log, queue externally
-            // client.Close()
-        },
-    }),
-)
-```
-
-| Policy       | Behavior                     | Best For                                         |
-| ------------ | ---------------------------- | ------------------------------------------------ |
-| `DropNewest` | Discards the new message     | Default, safe                                    |
-| `DropOldest` | Evicts oldest queued message | Real-time data (dashboards, tickers, game state) |
-
-## Write Coalescing
-
-When throughput is high and messages queue up, enable write coalescing to batch multiple text messages into a single WebSocket frame separated by newlines (`\n`). This reduces syscalls at the cost of receivers needing to split frames:
-
-```go
-cfg := wshub.DefaultConfig().WithCoalesceWrites(true)
-hub := wshub.NewHub(wshub.WithConfig(cfg))
-```
-
-- Only **text messages** are coalesced; binary messages are always sent as individual frames
-- Receivers must split coalesced frames on `\n` to recover individual messages
-- When disabled (default), every message is its own frame — no behavior change
-
-## Error Handling
-
-```go
-err := hub.JoinRoom(client, room)
-switch err {
-case wshub.ErrClientNotFound:
-    // Client not registered
-case wshub.ErrAlreadyInRoom:
-    // Client already in room
-case wshub.ErrEmptyRoomName:
-    // Empty room name
-case wshub.ErrRoomNotFound:
-    // Room doesn't exist
-case wshub.ErrNotInRoom:
-    // Client not in room
-case wshub.ErrConnectionClosed:
-    // Connection was closed
-case wshub.ErrSendBufferFull:
-    // Send buffer full
-case wshub.ErrHubNotStarted:
-    // Hub Run() has not been called yet
-case wshub.ErrHubDraining:
-    // Hub is draining, not accepting new connections
-case wshub.ErrHubStopped:
-    // Hub has been shut down
-case wshub.ErrMaxConnectionsReached:
-    // Connection limit reached
-case wshub.ErrMaxRoomsReached:
-    // Room limit per client reached
-case wshub.ErrRoomFull:
-    // Room is full
-case wshub.ErrRateLimitExceeded:
-    // Rate limit exceeded
-case wshub.ErrAuthenticationFailed:
-    // Authentication failed
-case wshub.ErrUnauthorized:
-    // Unauthorized action
-}
-```
-
-## Complete Example: Chat Application
-
-See [examples/chat/](examples/chat/) for a complete chat application demonstrating:
-
-- Room management
-- Username tracking
-- Message broadcasting
-- Middleware (recovery + logging)
-- Rate limiting
-- Connection limits
-
-## Test Client
-
-Save as `index.html` and open in a browser while the server is running:
-
-```html
-<!DOCTYPE html>
-<html>
-  <head>
-    <title>WebSocket Test</title>
-  </head>
-  <body>
-    <h1>WebSocket Test</h1>
-    <div>
-      <input type="text" id="message" placeholder="Type a message" />
-      <button onclick="send()">Send</button>
-    </div>
-    <div id="messages"></div>
-
-    <script>
-      const ws = new WebSocket("ws://localhost:8080/ws");
-
-      ws.onopen = () => {
-        console.log("Connected");
-        addMessage("Connected to server");
-      };
-
-      ws.onmessage = (event) => {
-        addMessage("Received: " + event.data);
-      };
-
-      ws.onclose = () => {
-        addMessage("Disconnected");
-      };
-
-      ws.onerror = (error) => {
-        console.error("WebSocket error:", error);
-        addMessage("Error occurred");
-      };
-
-      function send() {
-        const input = document.getElementById("message");
-        ws.send(input.value);
-        addMessage("Sent: " + input.value);
-        input.value = "";
-      }
-
-      function addMessage(msg) {
-        const div = document.getElementById("messages");
-        div.innerHTML += "<p>" + msg + "</p>";
-      }
-    </script>
-  </body>
-</html>
-```
-
-## Best Practices
-
-1. **Keep `CheckOrigin` restrictive** — the default (`AllowSameOrigin`) is safe; reach for `AllowOrigins` when your front-end is on another host, and treat `AllowAllOrigins` as development-only
-2. **Always use middleware for cross-cutting concerns** (logging, metrics, auth)
-3. **Use hooks for lifecycle events** instead of wrapping the hub
-4. **Implement proper logging and metrics** for production observability
-5. **Set appropriate limits** to prevent resource exhaustion
-6. **Use `Drain` then `Shutdown`** for zero-downtime deploys, then close the adapter
-7. **Handle errors appropriately** - don't ignore send failures
-8. **Use rooms for targeted messaging** instead of filtering in handlers
-9. **Set user ID after authentication** for multi-device support
-10. **Use metadata for request-scoped data** instead of global state
-11. **Test with concurrent clients** to ensure thread safety
-
-## Performance Tips
-
-- Increase `SendChannelSize` for high-throughput scenarios
-- Enable `CoalesceWrites` to batch queued text frames into a single WebSocket write — reduces syscalls under sustained broadcast load
-- Enable compression for large messages
-- Use `BroadcastWithContext` for timeout control
-- Batch messages when possible
-- Monitor send buffer sizes via metrics
-- For per-node fanout above ~5K clients, prefer scaling horizontally (multi-node via the Redis or NATS adapter) over `WithParallelBroadcast` — see [Real-world load tests](#real-world-load-tests)
+> **Note:** since v1.7.0 the default origin check is `AllowSameOrigin`. If your
+> front-end is served from a different origin than the WebSocket endpoint,
+> allowlist it with `wshub.AllowOrigins(...)` — see
+> [Configuration → Origin Checking](https://kartikrocks.github.io/wshub/docs/configuration#origin-checking).
+
+## Documentation
+
+Full guides live at **[kartikrocks.github.io/wshub](https://kartikrocks.github.io/wshub/)**:
+
+| Guide | Covers |
+| --- | --- |
+| [Getting Started](https://kartikrocks.github.io/wshub/docs/getting-started) | Install and run a minimal server |
+| [Hub](https://kartikrocks.github.io/wshub/docs/hub) | Broadcasting, client lookup, drain, health probes, shutdown |
+| [Client](https://kartikrocks.github.io/wshub/docs/client) | Per-connection sending, metadata, callbacks |
+| [Messages](https://kartikrocks.github.io/wshub/docs/messages) | Message type, handlers, zero-alloc JSON fan-out |
+| [Rooms](https://kartikrocks.github.io/wshub/docs/rooms) | Joining, room broadcasting, queries |
+| [Middleware](https://kartikrocks.github.io/wshub/docs/middleware) | Built-in and custom middleware chains |
+| [Router](https://kartikrocks.github.io/wshub/docs/router) | Event-based message dispatch |
+| [Hooks](https://kartikrocks.github.io/wshub/docs/hooks) | Connection, message, and room lifecycle hooks |
+| [Adapters](https://kartikrocks.github.io/wshub/docs/adapters) | Multi-node scaling via Redis or NATS |
+| [Presence](https://kartikrocks.github.io/wshub/docs/presence) | Cluster-wide client and room counts |
+| [Configuration](https://kartikrocks.github.io/wshub/docs/configuration) | Buffers, timeouts, compression, origin checking |
+| [Limits](https://kartikrocks.github.io/wshub/docs/limits) | Connection, room, and rate limits |
+| [Metrics](https://kartikrocks.github.io/wshub/docs/metrics) | Collector interface and the Prometheus subpackage |
+| [Errors](https://kartikrocks.github.io/wshub/docs/errors) | Sentinel errors and `errors.Is` matching |
+
+Exact type signatures are generated from source on
+[pkg.go.dev](https://pkg.go.dev/github.com/KARTIKrocks/wshub).
+
+Runnable programs are in [`examples/`](examples/) — simple, chat, auth, metrics,
+and multinode.
 
 ## Benchmarks
 

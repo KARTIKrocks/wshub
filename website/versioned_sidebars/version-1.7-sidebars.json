@@ -1,0 +1,47 @@
+{
+  "docsSidebar": [
+    "intro",
+    "getting-started",
+    {
+      "type": "category",
+      "label": "Core",
+      "collapsed": false,
+      "items": [
+        "hub",
+        "client",
+        "messages",
+        "rooms"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Composition",
+      "collapsed": false,
+      "items": [
+        "middleware",
+        "router",
+        "hooks"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Scaling",
+      "collapsed": false,
+      "items": [
+        "adapters",
+        "presence"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Operations",
+      "collapsed": false,
+      "items": [
+        "configuration",
+        "limits",
+        "metrics",
+        "errors"
+      ]
+    }
+  ]
+}
