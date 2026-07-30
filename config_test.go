@@ -104,7 +104,7 @@ func TestConfigBuilderMethods(t *testing.T) {
 }
 
 func TestAllowAllOrigins(t *testing.T) {
-	r := httptest.NewRequest("GET", "/ws", nil)
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	r.Header.Set("Origin", "https://evil.com")
 	if !AllowAllOrigins(r) {
 		t.Error("AllowAllOrigins should allow all origins")
@@ -130,7 +130,7 @@ func TestAllowSameOrigin(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := httptest.NewRequest("GET", "/ws", nil)
+			r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 			r.Host = tt.host
 			if tt.origin != "" {
 				r.Header.Set("Origin", tt.origin)
@@ -174,7 +174,7 @@ func TestWithCheckOrigin(t *testing.T) {
 		called = true
 		return true
 	})
-	r := httptest.NewRequest("GET", "/ws", nil)
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	c.CheckOrigin(r)
 	if !called {
 		t.Error("custom CheckOrigin was not called")
@@ -223,7 +223,7 @@ func TestApplyConfigDefaults_PingPeriodClamp(t *testing.T) {
 }
 
 func TestAllowSameOrigin_InvalidURL(t *testing.T) {
-	r := httptest.NewRequest("GET", "/ws", nil)
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	r.Header.Set("Origin", "://invalid-url")
 	if AllowSameOrigin(r) {
 		t.Error("invalid URL origin should be rejected")

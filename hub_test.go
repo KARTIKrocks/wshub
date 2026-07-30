@@ -1772,7 +1772,7 @@ func TestHandleHTTP_UpgradeError(t *testing.T) {
 	handler := hub.HandleHTTP()
 
 	// Send a non-WebSocket HTTP request — upgrade will fail.
-	req := httptest.NewRequest("GET", "/ws", nil)
+	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	w := httptest.NewRecorder()
 	handler(w, req)
 

@@ -58,6 +58,9 @@ reviews:
     - "!**/testdata/**"
     - "!**/go.sum"
     - "!**/vendor/**"
+    - "!**/node_modules/**"
+    - "!benchmarks/profiles/**"
+    - "!benchmarks/results/**"
 
   # Package-aware guidance so reviews match this library's conventions.
   path_instructions:
@@ -90,10 +93,38 @@ reviews:
         Check handler dispatch, middleware ordering, and panic recovery so a
         single bad handler cannot take down the hub. Confirm unmatched message
         types and error paths are covered.
+    - path: "hub.go"
+      instructions: >-
+        The dispatch loop, connection registration and shutdown/draining path.
+        Never suggest closing a client's send channel: producers send on it
+        without holding a lock a closer could take, so closing races with them.
+        Shutdown is signalled through client.done, writePump flushes on a
+        graceful close, and handleUnregister drains the buffer. Verify new
+        registry mutations hold the right lock and that no lock is held across
+        a channel send or a network write.
+    - path: "client.go"
+      instructions: >-
+        Per-connection read and write pumps. gorilla/websocket allows only one
+        concurrent writer and one concurrent reader per connection, so flag any
+        write that bypasses writePump. Do not suggest closing the send channel
+        (see hub.go). Check that every deadline, ping/pong handler and error
+        path still terminates both pumps exactly once.
+    - path: "presence.go"
+      instructions: >-
+        Cross-node presence gossip. Counts are eventually consistent by design;
+        flag anything that presents them as exact, and check for unbounded
+        growth when a peer node disappears without a leave message.
+    - path: "cmd/**"
+      instructions: >-
+        Developer tooling (the load generator), not part of the public API or
+        the coverage target. Review for correctness of the measurements it
+        reports; relax error-handling and style strictness.
     - path: "examples/**"
       instructions: >-
         Examples are illustrative; relax error-handling strictness but ensure
-        they compile and demonstrate correct API usage.
+        they compile and demonstrate correct API usage. They are copied by
+        users, so still flag missing http.Server timeouts and other unsafe
+        defaults.
 
   tools:
     # Reuse the repo's existing golangci-lint v2 ruleset; no duplication.
