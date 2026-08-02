@@ -23,6 +23,7 @@ func setupClientTest(t *testing.T) (*Hub, func() *websocket.Conn) {
 		hub.Shutdown(ctx)
 	})
 
+	waitHubReady(t, hub)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hub.UpgradeConnection(w, r)
 	}))
@@ -95,6 +96,7 @@ func TestClientSetUserIDLimit(t *testing.T) {
 		hub.Shutdown(ctx)
 	})
 
+	waitHubReady(t, hub)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hub.UpgradeConnection(w, r)
 	}))
@@ -469,6 +471,7 @@ func TestClientReadPumpMessageHandler(t *testing.T) {
 		hub.Shutdown(ctx)
 	})
 
+	waitHubReady(t, hub)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hub.UpgradeConnection(w, r)
 	}))
@@ -538,6 +541,7 @@ func TestClientReadPumpWithHooks(t *testing.T) {
 		hub.Shutdown(ctx)
 	})
 
+	waitHubReady(t, hub)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hub.UpgradeConnection(w, r)
 	}))
@@ -592,6 +596,7 @@ func TestClientReadPumpBeforeMessageReject(t *testing.T) {
 		hub.Shutdown(ctx)
 	})
 
+	waitHubReady(t, hub)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hub.UpgradeConnection(w, r)
 	}))
@@ -623,6 +628,7 @@ func TestClientOnMessageCallback(t *testing.T) {
 		hub.Shutdown(ctx)
 	})
 
+	waitHubReady(t, hub)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		client, _ := hub.UpgradeConnection(w, r)
 		var mu sync.Mutex
@@ -675,6 +681,7 @@ func TestClientOnCloseCallback(t *testing.T) {
 		hub.Shutdown(ctx)
 	})
 
+	waitHubReady(t, hub)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		client, _ := hub.UpgradeConnection(w, r)
 		client.OnClose(func(c *Client) {
@@ -711,6 +718,7 @@ func TestClientRateLimit(t *testing.T) {
 		hub.Shutdown(ctx)
 	})
 
+	waitHubReady(t, hub)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hub.UpgradeConnection(w, r)
 	}))
@@ -842,6 +850,7 @@ func setupCoalesceTest(t *testing.T, opts ...Option) (*Hub, func() *websocket.Co
 		hub.Shutdown(ctx)
 	})
 
+	waitHubReady(t, hub)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hub.UpgradeConnection(w, r)
 	}))
@@ -1062,6 +1071,7 @@ func TestWritePumpExitsOnHubShutdown(t *testing.T) {
 	hub := NewHub()
 	go hub.Run()
 
+	waitHubReady(t, hub)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hub.UpgradeConnection(w, r)
 	}))

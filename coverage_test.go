@@ -33,6 +33,7 @@ func waitForClientCount(t *testing.T, hub *Hub, expected int, timeout time.Durat
 
 func testDialerWithOpts(t *testing.T, hub *Hub, opts ...UpgradeOption) func() *websocket.Conn {
 	t.Helper()
+	waitHubReady(t, hub)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hub.UpgradeConnection(w, r, opts...)
 	}))

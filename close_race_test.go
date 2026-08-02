@@ -30,6 +30,7 @@ func TestCloseWithCodeDoesNotRaceWithSenders(t *testing.T) {
 	go hub.Run()
 	t.Cleanup(func() { _ = hub.Shutdown(context.Background()) })
 
+	waitHubReady(t, hub)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		client, err := hub.UpgradeConnection(w, r)
 		if err != nil {

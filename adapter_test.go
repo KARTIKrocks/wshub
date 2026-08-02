@@ -154,6 +154,7 @@ func setupHubPair(t *testing.T) (
 
 func makeDialer(t *testing.T, hub *Hub) func() *websocket.Conn {
 	t.Helper()
+	waitHubReady(t, hub)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hub.UpgradeConnection(w, r)
 	}))

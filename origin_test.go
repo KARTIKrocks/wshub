@@ -344,6 +344,7 @@ func TestRejectedUpgradesDoNotFloodLogs(t *testing.T) {
 		_ = hub.Shutdown(ctx)
 	}()
 
+	waitHubReady(t, hub)
 	server := httptest.NewServer(hub.HandleHTTP())
 	defer server.Close()
 
@@ -370,6 +371,16 @@ func TestRejectedUpgradesDoNotFloodLogs(t *testing.T) {
 			got, attempts)
 	}
 
+	// A dial rejected before the hub was ready never reaches the origin check,
+	// so it would silently make the count below come up short. Assert it
+	// separately, otherwise that failure mode looks like an off-by-one in the
+	// origin metric rather than a startup race.
+	if got := metrics.Stats().Errors["connection_rejected_not_ready"]; got != 0 {
+		t.Fatalf("connection_rejected_not_ready = %d, want 0 — %d of the dials "+
+			"were rejected before the hub was ready, so they never reached the "+
+			"origin check", got, got)
+	}
+
 	// Metrics still carry the exact count.
 	if got := metrics.Stats().Errors["origin_rejected"]; got != attempts {
 		t.Errorf("origin_rejected = %d, want %d", got, attempts)
@@ -392,6 +403,7 @@ func TestUpgradeRejectsCrossOriginDial(t *testing.T) {
 		_ = hub.Shutdown(ctx)
 	}()
 
+	waitHubReady(t, hub)
 	server := httptest.NewServer(hub.HandleHTTP())
 	defer server.Close()
 

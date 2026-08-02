@@ -17,6 +17,7 @@ import (
 // to dial a WebSocket connection to it.
 func testDialer(t *testing.T, hub *Hub) (dial func() *websocket.Conn, server *httptest.Server) {
 	t.Helper()
+	waitHubReady(t, hub)
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hub.UpgradeConnection(w, r)
 	}))
@@ -837,6 +838,7 @@ func TestHubUpgradeConnectionBeforeConnectHook(t *testing.T) {
 		hub.Shutdown(ctx)
 	})
 
+	waitHubReady(t, hub)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hub.UpgradeConnection(w, r)
 	}))
@@ -1217,6 +1219,7 @@ func TestHubHandleHTTPUpgrade(t *testing.T) {
 		hub.Shutdown(ctx)
 	})
 
+	waitHubReady(t, hub)
 	server := httptest.NewServer(hub.HandleHTTP())
 	t.Cleanup(server.Close)
 
@@ -1829,7 +1832,8 @@ func TestUpgradeConnection_HubContextDone(t *testing.T) {
 	defer cancel()
 	hub.Shutdown(ctx)
 
-	// Try to upgrade after shutdown — should fail.
+	// Try to upgrade after shutdown — should fail. No waitHubReady here: the
+	// hub is deliberately not running, which is the condition under test.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, err := hub.UpgradeConnection(w, r)
 		if err == nil {
