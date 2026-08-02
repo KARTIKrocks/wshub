@@ -44,9 +44,15 @@ jobs:
           cache: npm
           cache-dependency-path: website/package-lock.json
       - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm run build:fast
+      # `biome check` is formatter + linter + import sorting, so this is the
+      # format gate as well as the lint gate. Named explicitly because a step
+      # called "lint" reads like formatting is unchecked, and it is not.
+      - name: Lint and format check (Biome)
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build:fast
 
   # Full build of every live version, then publish. Only from main.
   deploy:

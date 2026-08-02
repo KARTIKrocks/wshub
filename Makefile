@@ -1,12 +1,16 @@
 GOLANGCI_LINT_VERSION := v2.12.2
 GOIMPORTS_VERSION := v0.48.0
 
+# The Markdown linter. Versioned in website/package.json rather than pinned
+# here, so Dependabot keeps it current along with the rest of the docs toolchain.
+MARKDOWNLINT := website/node_modules/.bin/markdownlint-cli2
+
 # Nested modules. Each has its own go.mod, so the root module's ./... does not
 # reach them — they need to be built and tested explicitly.
 SUBMODULES := adapter/redis adapter/nats prometheus
 EXAMPLE_MODULES := examples/multinode
 
-.PHONY: all setup deps work tidy tidy-modules tidy-check test test-v test-modules test-prometheus vet vet-modules lint lint-modules lint-fix fix build build-examples bench fuzz fmt cover clean ci loadtest
+.PHONY: all setup deps work tidy tidy-modules tidy-check test test-v test-modules test-prometheus vet vet-modules lint lint-modules lint-docs lint-docs-fix lint-fix fix build build-examples bench fuzz fmt cover clean ci loadtest
 
 all: fmt vet vet-modules lint lint-modules test test-modules build build-examples
 
@@ -112,12 +116,27 @@ lint-modules: setup work
 		(cd $$m && golangci-lint run ./...) || exit 1; \
 	done
 
+## Lint every Markdown file in the repo — the docs site, the README, and the
+## contributor/security policies. Config and rationale live in
+## .markdownlint-cli2.jsonc. Needs Node; the binary comes from website/, which
+## is the only npm project here.
+lint-docs: $(MARKDOWNLINT)
+	@website/node_modules/.bin/markdownlint-cli2
+
+## Lint Markdown and apply the fixes it can make automatically.
+lint-docs-fix: $(MARKDOWNLINT)
+	@website/node_modules/.bin/markdownlint-cli2 --fix
+
+$(MARKDOWNLINT):
+	@echo "Installing website dependencies (needed for the Markdown linter)..."
+	@cd website && npm ci
+
 ## Run golangci-lint with auto-fix
 lint-fix:
 	golangci-lint run --fix ./...
 
 ## Fix code formatting and linting issues
-fix: fmt lint-fix
+fix: fmt lint-fix lint-docs-fix
 
 ## Build all packages
 build:

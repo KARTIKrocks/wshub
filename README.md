@@ -1,16 +1,33 @@
-# wshub
+<!-- The centred logo block opens the file, so there is no h1 on line 1. -->
+<!-- markdownlint-disable-next-line MD041 -->
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="website/static/img/logo-dark.svg">
+    <img src="website/static/img/logo.svg" alt="wshub" width="104" height="104">
+  </picture>
+</p>
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/KARTIKrocks/wshub.svg)](https://pkg.go.dev/github.com/KARTIKrocks/wshub)
-[![Go Report Card](https://goreportcard.com/badge/github.com/KARTIKrocks/wshub)](https://goreportcard.com/report/github.com/KARTIKrocks/wshub)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/KARTIKrocks/wshub)](go.mod)
-[![CI](https://github.com/KARTIKrocks/wshub/actions/workflows/ci.yml/badge.svg)](https://github.com/KARTIKrocks/wshub/actions/workflows/ci.yml)
-[![GitHub tag](https://img.shields.io/github/v/tag/KARTIKrocks/wshub)](https://github.com/KARTIKrocks/wshub/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![codecov](https://codecov.io/gh/KARTIKrocks/wshub/branch/main/graph/badge.svg)](https://codecov.io/gh/KARTIKrocks/wshub)
+<h1 align="center">wshub</h1>
 
-A production-ready, scalable WebSocket package for Go with support for rooms, broadcasting, multi-node clustering, middleware, hooks, and extensibility.
+<p align="center">
+  A production-ready, scalable WebSocket package for Go with support for rooms,
+  broadcasting, multi-node clustering, middleware, hooks, and extensibility.
+</p>
 
-**[Documentation](https://kartikrocks.github.io/wshub/)** | **[API Reference](https://pkg.go.dev/github.com/KARTIKrocks/wshub)** | **[Changelog](CHANGELOG.md)**
+<p align="center">
+  <a href="https://pkg.go.dev/github.com/KARTIKrocks/wshub"><img src="https://pkg.go.dev/badge/github.com/KARTIKrocks/wshub.svg" alt="Go Reference"></a>
+  <a href="https://github.com/KARTIKrocks/wshub/releases"><img src="https://img.shields.io/github/v/tag/KARTIKrocks/wshub?filter=v*&amp;label=release" alt="Latest release"></a>
+  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/KARTIKrocks/wshub" alt="Go version"></a>
+  <a href="https://github.com/KARTIKrocks/wshub/actions/workflows/ci.yml"><img src="https://github.com/KARTIKrocks/wshub/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://codecov.io/gh/KARTIKrocks/wshub"><img src="https://codecov.io/gh/KARTIKrocks/wshub/branch/main/graph/badge.svg" alt="Coverage"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/KARTIKrocks/wshub" alt="License: MIT"></a>
+</p>
+
+<p align="center">
+  <b><a href="https://kartikrocks.github.io/wshub/">Documentation</a></b> ·
+  <b><a href="https://pkg.go.dev/github.com/KARTIKrocks/wshub">API Reference</a></b> ·
+  <b><a href="CHANGELOG.md">Changelog</a></b>
+</p>
 
 ## Features
 
@@ -98,22 +115,22 @@ func main() {
 
 Full guides live at **[kartikrocks.github.io/wshub](https://kartikrocks.github.io/wshub/)**:
 
-| Guide | Covers |
-| --- | --- |
-| [Getting Started](https://kartikrocks.github.io/wshub/docs/getting-started) | Install and run a minimal server |
-| [Hub](https://kartikrocks.github.io/wshub/docs/hub) | Broadcasting, client lookup, drain, health probes, shutdown |
-| [Client](https://kartikrocks.github.io/wshub/docs/client) | Per-connection sending, metadata, callbacks |
-| [Messages](https://kartikrocks.github.io/wshub/docs/messages) | Message type, handlers, zero-alloc JSON fan-out |
-| [Rooms](https://kartikrocks.github.io/wshub/docs/rooms) | Joining, room broadcasting, queries |
-| [Middleware](https://kartikrocks.github.io/wshub/docs/middleware) | Built-in and custom middleware chains |
-| [Router](https://kartikrocks.github.io/wshub/docs/router) | Event-based message dispatch |
-| [Hooks](https://kartikrocks.github.io/wshub/docs/hooks) | Connection, message, and room lifecycle hooks |
-| [Adapters](https://kartikrocks.github.io/wshub/docs/adapters) | Multi-node scaling via Redis or NATS |
-| [Presence](https://kartikrocks.github.io/wshub/docs/presence) | Cluster-wide client and room counts |
-| [Configuration](https://kartikrocks.github.io/wshub/docs/configuration) | Buffers, timeouts, compression, origin checking |
-| [Limits](https://kartikrocks.github.io/wshub/docs/limits) | Connection, room, and rate limits |
-| [Metrics](https://kartikrocks.github.io/wshub/docs/metrics) | Collector interface and the Prometheus subpackage |
-| [Errors](https://kartikrocks.github.io/wshub/docs/errors) | Sentinel errors and `errors.Is` matching |
+| Guide                                                                       | Covers                                                      |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| [Getting Started](https://kartikrocks.github.io/wshub/docs/getting-started) | Install and run a minimal server                            |
+| [Hub](https://kartikrocks.github.io/wshub/docs/hub)                         | Broadcasting, client lookup, drain, health probes, shutdown |
+| [Client](https://kartikrocks.github.io/wshub/docs/client)                   | Per-connection sending, metadata, callbacks                 |
+| [Messages](https://kartikrocks.github.io/wshub/docs/messages)               | Message type, handlers, zero-alloc JSON fan-out             |
+| [Rooms](https://kartikrocks.github.io/wshub/docs/rooms)                     | Joining, room broadcasting, queries                         |
+| [Middleware](https://kartikrocks.github.io/wshub/docs/middleware)           | Built-in and custom middleware chains                       |
+| [Router](https://kartikrocks.github.io/wshub/docs/router)                   | Event-based message dispatch                                |
+| [Hooks](https://kartikrocks.github.io/wshub/docs/hooks)                     | Connection, message, and room lifecycle hooks               |
+| [Adapters](https://kartikrocks.github.io/wshub/docs/adapters)               | Multi-node scaling via Redis or NATS                        |
+| [Presence](https://kartikrocks.github.io/wshub/docs/presence)               | Cluster-wide client and room counts                         |
+| [Configuration](https://kartikrocks.github.io/wshub/docs/configuration)     | Buffers, timeouts, compression, origin checking             |
+| [Limits](https://kartikrocks.github.io/wshub/docs/limits)                   | Connection, room, and rate limits                           |
+| [Metrics](https://kartikrocks.github.io/wshub/docs/metrics)                 | Collector interface and the Prometheus subpackage           |
+| [Errors](https://kartikrocks.github.io/wshub/docs/errors)                   | Sentinel errors and `errors.Is` matching                    |
 
 Exact type signatures are generated from source on
 [pkg.go.dev](https://pkg.go.dev/github.com/KARTIKrocks/wshub).
@@ -254,6 +271,8 @@ timestamp in the payload and computing `now - sent` on receive. Reproduce with
 > overcome it. The option remains for backward compatibility but is no longer
 > recommended — use the default serial broadcast.
 
+<!-- Separates the two blockquotes; without it some parsers merge them. -->
+
 > Always call `Build()` on your middleware chain for best performance.
 
 ### Concurrent Access (parallel goroutines)
@@ -283,6 +302,28 @@ All Hub and Client methods are thread-safe. The package uses:
 - Separate mutexes for callbacks
 - Channels for cross-goroutine communication
 - WaitGroups for graceful shutdown
+
+## Security
+
+wshub sits on the network edge — it terminates untrusted WebSocket upgrades — so
+the security surface is treated as part of the API, not an afterthought.
+[v1.7.0](CHANGELOG.md) changed `DefaultConfig()` from `AllowAllOrigins` to
+`AllowSameOrigin` as a breaking change, because a default that accepts an upgrade
+from any origin leaves every server built on it open to cross-site WebSocket
+hijacking.
+
+Every push and pull request to `main` is scanned by
+[CodeQL](https://github.com/KARTIKrocks/wshub/actions/workflows/codeql.yml), with
+a full re-scan weekly to catch newly published query patterns against unchanged
+code. `govulncheck` gates every merge on advisories that are reachable from this
+code's call graph. Both run separately against each of the four modules — the
+root package, `prometheus`, `adapter/redis`, and `adapter/nats` — because a scan
+started from the root stops at the nested `go.mod` boundaries and would miss the
+adapters' own dependency trees. Dependabot tracks updates across all four, plus
+the docs site and the GitHub Actions themselves.
+
+See [SECURITY.md](SECURITY.md) for supported versions, what is in scope, and how
+to report a vulnerability privately.
 
 ## License
 

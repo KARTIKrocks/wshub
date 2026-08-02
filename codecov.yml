@@ -24,4 +24,4 @@ ignore:
   - "examples/**"
   - "cmd/**"
   - "vendor/**"
-  - "wshub-website/**"
+  - "website/**"
