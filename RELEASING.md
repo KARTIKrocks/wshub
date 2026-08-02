@@ -13,12 +13,16 @@ publish a module that nothing can build.
 ## Module graph
 
 ```text
-github.com/KARTIKrocks/wshub                 (root)
-  └── wshub/adapter/redis      pins wshub
-  └── wshub/adapter/nats       pins wshub
-  └── wshub/prometheus         pins wshub
-        └── wshub/examples/multinode   pins wshub + adapter/redis
+github.com/KARTIKrocks/wshub          (root)
+  ├── wshub/adapter/redis             pins wshub
+  ├── wshub/adapter/nats              pins wshub
+  ├── wshub/prometheus                pins wshub
+  └── wshub/examples/multinode        pins wshub AND adapter/redis
 ```
+
+All four pin the root module directly; `prometheus` is not a prerequisite for
+anything. The only second-order dependency is `examples/multinode`, which also
+pins `adapter/redis` and therefore has to come after it.
 
 Release strictly top-down: **root → adapters and prometheus → examples**. A
 submodule can only pin a wshub version that is already published.

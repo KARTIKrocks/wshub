@@ -30,7 +30,12 @@ const siteDir = path.resolve(
 );
 const versionsFile = path.join(siteDir, 'versions.json');
 
-const MAX_LIVE_VERSIONS = 4;
+// Shared with docusaurus.config.ts, which uses the same window to decide what
+// to build. Read rather than duplicated so a bump in one cannot leave this
+// script warning about snapshots the site is still publishing.
+const MAX_LIVE_VERSIONS = JSON.parse(
+  fs.readFileSync(path.join(siteDir, 'versions.config.json'), 'utf8'),
+).maxLiveVersions;
 
 function fail(message) {
   console.error(`\x1b[31merror\x1b[0m ${message}`);

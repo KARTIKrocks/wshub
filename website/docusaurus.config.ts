@@ -17,11 +17,18 @@ import { themes as prismThemes } from 'prism-react-renderer';
  * Snapshots are MAJOR.MINOR ("1.7"), never per patch. A patch that changes
  * documented behaviour is edited into the existing snapshot in place.
  *
- * Only the newest MAX_LIVE_VERSIONS snapshots are built. Older ones stay in
+ * Only the newest `maxLiveVersions` snapshots are built. Older ones stay in
  * git (readable at their tag) but are dropped from the site so build time and
  * search index size stay flat as releases accumulate.
+ *
+ * The window lives in versions.config.json because cut-version.mjs needs the
+ * same number to decide which snapshots it is about to push out of the live
+ * set. Duplicating it meant the script could warn about a different window
+ * than the one the site actually builds.
  */
-const MAX_LIVE_VERSIONS = 4;
+const MAX_LIVE_VERSIONS: number = JSON.parse(
+  fs.readFileSync(path.resolve(__dirname, 'versions.config.json'), 'utf8'),
+).maxLiveVersions;
 
 /** Shared so the literal paths in headTags cannot drift from `baseUrl`. */
 const BASE_URL = '/wshub/';
