@@ -1,26 +1,67 @@
 # Documentation versioning
 
-wshub ships often. Versioned docs get unmaintainable fast if every release
-snapshots the whole tree, so this site follows three rules.
+wshub ships often — eight minors between `v1.0.0` and `v1.7.0`, a span of four
+and a half months. Versioned docs get unmaintainable fast if every release
+snapshots the whole tree, so this site follows four rules.
 
 ## The rules
 
-### 1. Snapshot per minor, never per patch
+### 1. Snapshot when a release changes documented behaviour — not on every release
 
-Versions are `MAJOR.MINOR` — `1.7`, `1.8`, `2.0`. Never `1.7.0`, never `v1.7`.
+A snapshot exists to answer one question: *what was true before this release
+broke it?* If nothing broke, the snapshot is a byte-identical copy of 15 files
+that has to be maintained forever.
+
+**The test:** does this release make an existing page **wrong for someone on the
+previous version**? A changed default, changed semantics, a rename, a removal, a
+deprecation — those get a snapshot. Purely additive releases do not.
+
+`v1.7.0` is the worked example. It changed `DefaultConfig()` from
+`AllowAllOrigins` to `AllowSameOrigin`, so every page describing the old default
+became wrong for anyone still on `1.6`. That earned `version-1.7`. A release that
+only adds an option does not — see rule 2 for what it gets instead.
+
+Go makes this rule stronger than it would be elsewhere. Semver plus the Go
+compatibility promise means additive minors leave the documented contract
+intact, and a `v2` is a different import path
+(`github.com/KARTIKrocks/wshub/v2`) with its own pkg.go.dev — a genuinely
+different package. **Always snapshot at a major.**
+
+### 2. Additive changes get a version marker, not a snapshot
+
+The one real problem a reader on an older version has is the inverse of a
+breaking change: they read about something that does not exist in their version
+yet, and it does not compile. Snapshots are an expensive fix for that. A marker
+is a cheap one, and it is a better answer — a `1.5` snapshot tells you what
+existed, a marker tells you what upgrading buys you.
+
+The convention is plain Markdown, so it needs no components and survives being
+copied into a snapshot:
+
+| Situation | Write |
+| --- | --- |
+| New row in an API table | append `_1.6+_` to the description cell |
+| New option or behaviour in prose | open the paragraph with `_Added in 1.6._` |
+| New member inside a code block | trailing `// 1.6+` comment |
+| Behaviour that changed | `_Changed in 1.7._` plus one line on what it was before |
+
+Markers use `MAJOR.MINOR` — `1.6`, not `v1.6.0` — so they match snapshot names
+and stay greppable. Drop a marker once it names a version older than the oldest
+live snapshot; by then everyone reading has it.
+
+### 3. Snapshots are `MAJOR.MINOR`, never patch
+
+Versions are `1.7`, `1.8`, `2.0`. Never `1.7.0`, never `v1.7`.
 
 A patch release (`1.7.1`) that changes documented behaviour is **edited into the
 existing `versioned_docs/version-1.7/` in place**. It does not get its own
-snapshot.
+snapshot. A patch by definition does not change the contract; if it did, the
+docs were already wrong, and the fix belongs in the snapshot that is wrong.
 
-wshub already has 12+ released tags across 8 minors. Snapshotting per patch
-would mean 12 full copies of 15 files today, and a build that slows down with
-every bugfix. Per minor, it's 8 — and only the newest few are built.
+`npm run cut-version` enforces the format; it rejects anything that isn't
+`MAJOR.MINOR`, already exists, or is older than the current newest.
 
-`npm run cut-version` enforces this; it rejects anything that isn't
-`MAJOR.MINOR`.
-
-### 2. Only the newest 4 versions are built
+### 4. Only the newest 4 versions are built
 
 `MAX_LIVE_VERSIONS` in `docusaurus.config.ts` caps how many snapshots get built
 and indexed. Older ones stay in git — readable at their tag, restorable by
@@ -28,7 +69,12 @@ bumping the constant — but they don't cost build time or search index size.
 
 This keeps build time flat as releases accumulate instead of growing linearly.
 
-### 3. `docs/` is the future, not the present
+Four is generous under rule 1. Snapshotting every minor at the observed cadence
+would burn the whole window in about six months; snapshotting only breaking ones
+makes it last years. Raise it only if the reason is real support obligations,
+not release count.
+
+### 5. `docs/` is the future, not the present
 
 | Directory | Serves | URL |
 | --- | --- | --- |
@@ -43,22 +89,37 @@ snapshot. The snapshot is frozen history.
 
 ## Release runbook
 
-When cutting wshub `1.8.0`:
+Every release starts the same way, and then rule 1 decides whether it ends
+there.
+
+### Every release
+
+Make sure `docs/` describes the release accurately — everything merged into
+`main` since the last release should already be reflected there — and that new
+APIs carry their `_1.8+_` markers.
+
+### If the release only adds
+
+Nothing else to do. `docs/` becomes the new truth on the next deploy, the
+markers tell readers on older versions what they need to upgrade to, and the
+existing snapshot keeps serving `/docs/`.
+
+Wait — that last part is the catch. `/docs/` serves the newest **snapshot**, so
+an additive release does not reach the default URL until the next snapshot is
+cut. That is the deliberate trade: readers see the last release whose behaviour
+is fully described, and `/docs/next/` carries everything newer. If that gap gets
+uncomfortably wide, that is the signal to cut a snapshot even without a breaking
+change.
+
+### If the release changes documented behaviour
 
 ```bash
 cd website
-
-# 1. Make sure docs/ describes 1.8 accurately. Everything merged into main
-#    since the last release should already be reflected there.
-
-# 2. Snapshot it.
 npm run cut-version -- 1.8
-
-# 3. Verify.
 npm run check
 ```
 
-That's it. `versions.json`, `versioned_docs/version-1.8/`, and
+`versions.json`, `versioned_docs/version-1.8/`, and
 `versioned_sidebars/version-1.8-sidebars.json` are created for you, `/docs/`
 starts serving 1.8, and 1.7 moves into the version dropdown.
 
@@ -67,8 +128,8 @@ which one and prints the `git rm` to drop it for good.
 
 ### Patch releases
 
-No snapshot. Edit `versioned_docs/version-<minor>/` directly, and mirror the
-change into `docs/` if it still applies to `main`.
+Never a snapshot. Edit `versioned_docs/version-<minor>/` directly, and mirror
+the change into `docs/` if it still applies to `main`.
 
 ## Day-to-day
 

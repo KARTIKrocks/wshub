@@ -10,6 +10,13 @@
  *   - versions are cut in ascending order
  *   - a version is never cut twice
  *
+ * Note that not every release runs this. A snapshot is cut only when a release
+ * changes documented behaviour — a changed default, a rename, a removal, a
+ * deprecation — or when it is a major. Purely additive releases get a `_1.8+_`
+ * marker in docs/ instead, which is why the versions here are expected to be
+ * sparse: 1.7 then 2.0 is a healthy sequence, not a mistake. See VERSIONING.md
+ * rules 1 and 2. This script cannot check that condition, so it is on you.
+ *
  * Usage: npm run cut-version -- 1.8
  */
 import { execFileSync } from 'node:child_process';

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="wshub">
   <title>wshub</title>
-  <g stroke="#2563eb" stroke-width="4" stroke-linecap="round">
+  <g stroke="#3b82f6" stroke-width="4" stroke-linecap="round">
     <path d="M32 32 53 32"/>
     <path d="M32 32 42.5 13.81"/>
     <path d="M32 32 21.5 13.81"/>
@@ -16,5 +16,5 @@
     <circle cx="21.5" cy="50.19" r="5.5"/>
     <circle cx="42.5" cy="50.19" r="5.5"/>
   </g>
-  <circle cx="32" cy="32" r="10" fill="#2563eb"/>
+  <circle cx="32" cy="32" r="10" fill="#3b82f6"/>
 </svg>

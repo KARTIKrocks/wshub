@@ -9,16 +9,22 @@ import { themes as prismThemes } from 'prism-react-renderer';
 /**
  * Versioning policy — see VERSIONING.md for the full runbook.
  *
- * Snapshots are cut per MINOR release ("1.7"), never per patch. A patch that
- * changes documented behaviour is edited into the existing snapshot in place.
- * Cutting per patch would multiply the docs tree by every release and is the
- * main reason versioned sites become unmaintainable.
+ * A snapshot is cut only when a release changes documented behaviour — a
+ * changed default, a rename, a removal, a deprecation — or when it is a major.
+ * Purely additive releases get a `_1.8+_` marker in docs/ instead, so expect
+ * this list to be sparse rather than one entry per release.
+ *
+ * Snapshots are MAJOR.MINOR ("1.7"), never per patch. A patch that changes
+ * documented behaviour is edited into the existing snapshot in place.
  *
  * Only the newest MAX_LIVE_VERSIONS snapshots are built. Older ones stay in
  * git (readable at their tag) but are dropped from the site so build time and
  * search index size stay flat as releases accumulate.
  */
 const MAX_LIVE_VERSIONS = 4;
+
+/** Shared so the literal paths in headTags cannot drift from `baseUrl`. */
+const BASE_URL = '/wshub/';
 
 const versionsFile = path.resolve(__dirname, 'versions.json');
 const allVersions: string[] = fs.existsSync(versionsFile)
@@ -39,7 +45,27 @@ const includedVersions = fastBuild
 const config: Config = {
   title: 'wshub',
   tagline: 'Production-ready Go WebSocket hub',
+  // .ico carries 16/32/48 frames for the browsers that ignore SVG favicons;
+  // the SVG below is preferred by everything current and stays sharp on hidpi.
   favicon: 'img/favicon.ico',
+
+  headTags: [
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'icon',
+        type: 'image/svg+xml',
+        href: `${BASE_URL}img/favicon.svg`,
+      },
+    },
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'apple-touch-icon',
+        href: `${BASE_URL}img/apple-touch-icon.png`,
+      },
+    },
+  ],
 
   future: {
     v4: true,
@@ -49,7 +75,7 @@ const config: Config = {
   },
 
   url: 'https://kartikrocks.github.io',
-  baseUrl: '/wshub/',
+  baseUrl: BASE_URL,
 
   organizationName: 'KARTIKrocks',
   projectName: 'wshub',
@@ -112,6 +138,10 @@ const config: Config = {
       logo: {
         alt: 'wshub',
         src: 'img/logo.svg',
+        // The mark uses the same primary token as the theme, so it needs the
+        // dark-mode value (#3b82f6) on a slate ground the way every other
+        // primary-colored element does.
+        srcDark: 'img/logo-dark.svg',
       },
       items: [
         {

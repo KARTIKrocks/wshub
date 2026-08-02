@@ -27,17 +27,17 @@ import "github.com/KARTIKrocks/wshub"
 type MetricsCollector interface {
     IncrementConnections()
     DecrementConnections()
-    IncrementMessagesReceived()        // renamed from IncrementMessages in v1.5.0
-    IncrementMessagesSent(count int)   // new in v1.5.0
-    IncrementMessagesDropped()         // new in v1.5.0
+    IncrementMessagesReceived()        // 1.5+, was IncrementMessages
+    IncrementMessagesSent(count int)   // 1.5+
+    IncrementMessagesDropped()         // 1.5+
     RecordMessageSize(size int)
     RecordLatency(duration time.Duration)
-    RecordBroadcastDuration(duration time.Duration) // new in v1.5.0
+    RecordBroadcastDuration(duration time.Duration) // 1.5+
     IncrementErrors(errorType string)
     IncrementRoomJoins()
     IncrementRoomLeaves()
-    IncrementRooms()                   // new in v1.5.0
-    DecrementRooms()                   // new in v1.5.0
+    IncrementRooms()                   // 1.5+
+    DecrementRooms()                   // 1.5+
 }
 
 // Use with hub

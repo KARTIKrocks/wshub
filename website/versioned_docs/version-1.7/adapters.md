@@ -133,9 +133,9 @@ go hub.Run()
 | --- | --- |
 | `WithChannel(name)` | Redis only — Pub/Sub channel. Default `wshub:messages` |
 | `WithSubject(name)` | NATS only — subject. Default `wshub.messages` |
-| `WithUnmarshalErrorHandler(fn)` | Observe messages that fail JSON unmarshaling in the subscribe path |
+| `WithUnmarshalErrorHandler(fn)` | Observe messages that fail JSON unmarshaling in the subscribe path _1.6+_ |
 
-Added in v1.6.0. A malformed payload on the bus — a stray publisher, a partial
+_Added in 1.6._ A malformed payload on the bus — a stray publisher, a partial
 write, a version mismatch between nodes — is dropped by the subscribe path.
 Without a handler that happens silently, so a node quietly stops relaying with
 nothing in the logs. Both adapters accept the same option:
