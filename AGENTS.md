@@ -105,6 +105,20 @@ make cover            # coverage report -> coverage.html
 - Ensure `make all` (or at least `make ci`) passes before opening a PR.
 - **One branch per change.** Never add follow-up commits to a branch that has
   already been merged — branch again off updated `main`.
+- **Branch names are `type/kebab-slug`**, using the same type as the commit:
+  `fix/close-with-code-send-channel-race`, `ci/test-submodules`,
+  `docs/docusaurus-website`.
+- **Commits follow [Conventional Commits](https://www.conventionalcommits.org/)**:
+  `type(optional-scope): imperative summary`, no trailing period. Types are
+  `feat`, `fix`, `docs`, `test`, `ci`, `build`, `chore`, `perf`, `refactor`,
+  `revert`. Security fixes are `fix(security):`; dependency bumps are
+  `chore(deps):` (`ci(deps):` for Actions), which is what Dependabot is
+  configured to emit.
+- **PRs are squash-merged**, so the PR title becomes the commit on `main` and
+  must itself be a valid Conventional Commit. Intermediate commits on the branch
+  are working state and do not need to be tidy — they will be collapsed.
+- Never push directly to `main`; every change goes through a PR, including
+  single-line ones.
 - CI (`.github/workflows/ci.yml`) tests the root module at the `go.mod` floor
   (1.22) and the current release (1.26), tests each submodule at its own minimum
   and at the current release, and uploads coverage to Codecov. The `ci` job is
@@ -116,6 +130,10 @@ make cover            # coverage report -> coverage.html
   catch API drift. `codecov.yml` ignores `examples/`, `cmd/` and the website,
   so coverage reflects library code only.
 
+Releases have their own ordering constraints because this is a multi-module
+repository, and Go module tags are permanent once the proxy has served them —
+read [`RELEASING.md`](RELEASING.md) before tagging anything.
+
 ## Examples & load testing
 
 - `examples/` — runnable examples (simple, chat, auth, metrics, multinode).
@@ -123,20 +141,35 @@ make cover            # coverage report -> coverage.html
 
 ## Documentation website
 
-The docs site is **not on `main`** — it lives on the separate **`website`** branch
-under `wshub-website/` (React 19 + Vite 7 + TypeScript + Tailwind v4 + Shiki). It is
-built and published to GitHub Pages (the `gh-pages` branch) with `npm run deploy`,
-served under the `/wshub/` base path.
+The docs site lives on `main` in **`website/`** and is built with **Docusaurus**
+(TypeScript, Biome for lint/format). It is published to GitHub Pages by
+`.github/workflows/docs.yml` on every push to `main` that touches `website/` —
+there is no manual deploy step and nothing to mirror onto another branch.
 
-The site is **version-aware**: it fetches releases from the GitHub API and renders
-docs for the selected version. Two things must be kept in sync when the library
-changes:
+```bash
+cd website
+npm ci
+npm start          # preview at localhost:3000
+npm run check      # lint + typecheck + build — what the Docs workflow runs
+```
 
-- **New release** — bump `LATEST_VERSION` in `src/components/VersionProvider.tsx`.
-- **Public API change** — update the matching topic file in `src/content/*.tsx`
-  (one per subsystem: `hub`, `client`, `rooms`, `adapter`, `presence`, etc.). New
-  features that only exist from a given version are gated in `src/App.tsx` via
-  `minVersion('vX.Y.Z')`, so add the gate there when a doc section is version-specific.
+`npm run lint` is `biome check`, which covers formatting as well as linting.
+Biome has no Markdown support, so prose is linted separately and repo-wide with
+`make lint-docs` (config: `.markdownlint-cli2.jsonc`).
 
-When you change the **public API** on `main`, mirror the change on the `website`
-branch so the published docs don't drift.
+**Versioning is by snapshot, not per release.** `website/docs/` is the
+unreleased/current documentation; `website/versioned_docs/version-1.7/` is a
+frozen snapshot of what a released version does.
+
+- **Never edit `website/versioned_docs/`.** Changing a snapshot rewrites history
+  for users still on that version. Snapshots are cut deliberately with
+  `website/scripts/cut-version.mjs`; see `website/VERSIONING.md`.
+- **Public API change** — update the matching page under `website/docs/` and mark
+  the version inline rather than cutting a new snapshot: append `_1.8+_` to an
+  API table cell, open a paragraph with `_Added in 1.8._`, add a trailing
+  `// 1.8+` comment in a code block, or write `_Changed in 1.8._` plus one line
+  on the previous behaviour.
+
+Internal links are checked at build time (`onBrokenLinks: 'throw'`), so a
+renamed page fails the Docs workflow rather than shipping a dead link. External
+links are **not** checked.
