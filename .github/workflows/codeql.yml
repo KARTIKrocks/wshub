@@ -9,13 +9,31 @@ on:
     - cron: "0 6 * * 1"
 
 permissions:
-  security-events: write
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # Scanned per module for the same reason `lint` and `vuln` in ci.yml are: the
+  # root module's ./... stops at nested go.mod boundaries, so a single build
+  # from the root extracts no code at all from the adapters or the collector.
+  #
+  # `category` must differ per module. CodeQL keys uploaded results by it, so
+  # without it each module's results would overwrite the previous module's and
+  # the security tab would only ever show whichever job finished last.
   analyze:
-    name: Analyze
+    name: Analyze (${{ matrix.module }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      security-events: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [".", "adapter/redis", "adapter/nats", "prometheus"]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -30,8 +48,18 @@ jobs:
         with:
           languages: go
 
+      # Note the absence of the `go mod edit -replace` that ci.yml uses here.
+      # That replace exists to catch API drift at compile time, which is a test
+      # concern. Doing it here would pull the root module's source into this
+      # job's source root too, so every root-module finding would be reported
+      # four times over, once per module category. Building each submodule
+      # against its pinned wshub release keeps the root out of scope for the
+      # three submodule jobs, where the "." job already covers it.
       - name: Build
+        working-directory: ${{ matrix.module }}
         run: go build ./...
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4.37.3
+        with:
+          category: "/language:go/module:${{ matrix.module }}"

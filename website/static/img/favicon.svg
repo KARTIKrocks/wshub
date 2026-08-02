@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="wshub">
+  <title>wshub</title>
+  <defs>
+    <linearGradient id="wshubFavicon" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#wshubFavicon)"/>
+  <g stroke="#fff" stroke-width="3" stroke-linecap="round">
+    <path d="M32 32 47.5 32"/>
+    <path d="M32 32 39.75 18.58"/>
+    <path d="M32 32 24.25 18.58"/>
+    <path d="M32 32 16.5 32"/>
+    <path d="M32 32 24.25 45.42"/>
+    <path d="M32 32 39.75 45.42"/>
+  </g>
+  <g fill="#fff">
+    <circle cx="47.5" cy="32" r="3.8"/>
+    <circle cx="39.75" cy="18.58" r="3.8"/>
+    <circle cx="24.25" cy="18.58" r="3.8"/>
+    <circle cx="16.5" cy="32" r="3.8"/>
+    <circle cx="24.25" cy="45.42" r="3.8"/>
+    <circle cx="39.75" cy="45.42" r="3.8"/>
+  </g>
+  <circle cx="32" cy="32" r="6.5" fill="#fff"/>
+</svg>

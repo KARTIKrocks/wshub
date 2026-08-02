@@ -127,6 +127,7 @@ func TestHealth_Snapshot(t *testing.T) {
 	})
 
 	// Connect a client.
+	waitHubReady(t, hub)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hub.UpgradeConnection(w, r)
 	}))

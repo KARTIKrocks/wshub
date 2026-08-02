@@ -1,12 +1,17 @@
 GOLANGCI_LINT_VERSION := v2.12.2
 GOIMPORTS_VERSION := v0.48.0
+GOVULNCHECK_VERSION := v1.6.0
+
+# The Markdown linter. Versioned in website/package.json rather than pinned
+# here, so Dependabot keeps it current along with the rest of the docs toolchain.
+MARKDOWNLINT := website/node_modules/.bin/markdownlint-cli2
 
 # Nested modules. Each has its own go.mod, so the root module's ./... does not
 # reach them — they need to be built and tested explicitly.
 SUBMODULES := adapter/redis adapter/nats prometheus
 EXAMPLE_MODULES := examples/multinode
 
-.PHONY: all setup deps work tidy tidy-modules tidy-check test test-v test-modules test-prometheus vet vet-modules lint lint-modules lint-fix fix build build-examples bench fuzz fmt cover clean ci loadtest
+.PHONY: all setup deps work tidy tidy-modules tidy-check test test-v test-modules test-prometheus vet vet-modules lint lint-modules lint-docs lint-docs-fix lint-fix fix vuln vuln-modules print-govulncheck-version build build-examples bench fuzz fmt cover clean ci loadtest
 
 all: fmt vet vet-modules lint lint-modules test test-modules build build-examples
 
@@ -19,6 +24,10 @@ setup:
 	@command -v goimports >/dev/null 2>&1 || { \
 		echo "Installing goimports $(GOIMPORTS_VERSION)..."; \
 		go install golang.org/x/tools/cmd/goimports@$(GOIMPORTS_VERSION); \
+	}
+	@command -v govulncheck >/dev/null 2>&1 || { \
+		echo "Installing govulncheck $(GOVULNCHECK_VERSION)..."; \
+		go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION); \
 	}
 
 ## Download module dependencies
@@ -112,12 +121,54 @@ lint-modules: setup work
 		(cd $$m && golangci-lint run ./...) || exit 1; \
 	done
 
+## Scan the root module for known vulnerabilities, filtered to advisories this
+## code actually reaches. Mirrors the `vuln` CI job, which gates merges.
+##
+## Needs network access — the advisory database is fetched on every run.
+##
+## Note this also scans the standard library of whichever Go toolchain you have
+## installed, so it can fail locally on a green branch when your Go is a patch
+## release behind the one CI pins. That is a real finding about your machine,
+## not a false positive.
+vuln: setup
+	govulncheck ./...
+
+## Print the pinned scanner version. CI installs govulncheck with this rather
+## than hardcoding a second copy of the number, so the workflow and this file
+## cannot drift apart.
+print-govulncheck-version:
+	@echo $(GOVULNCHECK_VERSION)
+
+## Scan every nested module. Separate for the same reason lint-modules is: the
+## root module's ./... stops at nested go.mod boundaries, so the adapters' own
+## dependency trees (redis, nats) are invisible to a scan started from here.
+vuln-modules: setup work
+	@for m in $(SUBMODULES); do \
+		echo "==> vuln $$m"; \
+		(cd $$m && govulncheck ./...) || exit 1; \
+	done
+
+## Lint every Markdown file in the repo — the docs site, the README, and the
+## contributor/security policies. Config and rationale live in
+## .markdownlint-cli2.jsonc. Needs Node; the binary comes from website/, which
+## is the only npm project here.
+lint-docs: $(MARKDOWNLINT)
+	@website/node_modules/.bin/markdownlint-cli2
+
+## Lint Markdown and apply the fixes it can make automatically.
+lint-docs-fix: $(MARKDOWNLINT)
+	@website/node_modules/.bin/markdownlint-cli2 --fix
+
+$(MARKDOWNLINT):
+	@echo "Installing website dependencies (needed for the Markdown linter)..."
+	@cd website && npm ci
+
 ## Run golangci-lint with auto-fix
 lint-fix:
 	golangci-lint run --fix ./...
 
 ## Fix code formatting and linting issues
-fix: fmt lint-fix
+fix: fmt lint-fix lint-docs-fix
 
 ## Build all packages
 build:
@@ -160,5 +211,10 @@ loadtest:
 clean:
 	rm -f coverage.out coverage.html
 
-## CI pipeline: vet, lint, test across every module
-ci: vet vet-modules lint lint-modules test test-modules
+## Everything the `ci` merge gate checks, in one target: vet, lint, test and
+## vulnerability-scan every module, plus Markdown across the repo.
+##
+## Heavier than `make all` on purpose — it needs the network for the advisory
+## database and Node for the Markdown linter. Use `all` in the edit loop and
+## this before opening a pull request.
+ci: vet vet-modules lint lint-modules test test-modules vuln vuln-modules lint-docs

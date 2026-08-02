@@ -59,8 +59,18 @@ reviews:
     - "!**/go.sum"
     - "!**/vendor/**"
     - "!**/node_modules/**"
+    - "!**/package-lock.json"
     - "!benchmarks/profiles/**"
     - "!benchmarks/results/**"
+    # Frozen snapshots of website/docs taken at release time. A docs change
+    # lands in website/docs only — snapshots are produced by cut-version and
+    # are never hand-edited, so any suggestion here is unactionable by
+    # definition: a published snapshot documents the behaviour of a shipped
+    # version, and changing it rewrites history for users still on it.
+    - "!website/versioned_docs/**"
+    - "!website/versioned_sidebars/**"
+    # Generated raster assets and the logo SVGs; nothing to review as text.
+    - "!website/static/**"
 
   # Package-aware guidance so reviews match this library's conventions.
   path_instructions:
@@ -125,6 +135,20 @@ reviews:
         they compile and demonstrate correct API usage. They are copied by
         users, so still flag missing http.Server timeouts and other unsafe
         defaults.
+    - path: "website/docs/**"
+      instructions: >-
+        Docusaurus source for the unreleased docs. Verify every Go snippet
+        compiles against the current API and that option names match the
+        exported identifiers exactly — a wrong option name here is a support
+        burden, not a typo. This site is versioned by snapshot, not per
+        release: additive changes are marked inline instead of being
+        snapshotted, so check that anything documenting a new API carries its
+        version marker — `_1.8+_` appended to an API table's description cell,
+        `_Added in 1.8._` opening a prose paragraph, or a trailing `// 1.8+`
+        comment inside a code block. Behaviour that changed takes
+        `_Changed in 1.8._` plus a line on what it was before. See
+        website/VERSIONING.md rules 1 and 2. Do not suggest edits to
+        website/versioned_docs; those are frozen release snapshots.
 
   tools:
     # Reuse the repo's existing golangci-lint v2 ruleset; no duplication.
