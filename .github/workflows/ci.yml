@@ -181,12 +181,16 @@ jobs:
         if: matrix.module != '.'
         working-directory: ${{ matrix.module }}
         run: go mod edit -replace github.com/KARTIKrocks/wshub=$GITHUB_WORKSPACE
-      # Deliberately unpinned. A scanner held at an old release stops
-      # understanding newly published advisory formats, and the vulnerability
-      # database is fetched at run time regardless, so pinning buys
-      # reproducibility of the tool but not of the result.
+      # Version comes from the Makefile so a local `make vuln` and this gate
+      # run the same scanner. Nothing bumps it automatically — Dependabot does
+      # not track `go install` lines — so refresh GOVULNCHECK_VERSION
+      # deliberately. The advisory database is still fetched at run time, so an
+      # older scanner still reports current advisories.
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        run: |
+          version="$(make -s print-govulncheck-version)"
+          echo "govulncheck $version"
+          go install "golang.org/x/vuln/cmd/govulncheck@$version"
       - name: Scan
         working-directory: ${{ matrix.module }}
         run: govulncheck ./...

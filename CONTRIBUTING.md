@@ -26,6 +26,8 @@ make test          # run root-module tests with the race detector
 make test-modules  # run tests for adapter/redis, adapter/nats, prometheus
 make bench         # run benchmarks
 make lint          # run linter on the root module
+make vuln          # govulncheck on the root module
+make vuln-modules  # govulncheck on the nested modules
 make tidy          # go mod tidy on the root module
 make tidy-modules  # go mod tidy on the nested modules
 make ci            # run all checks across every module
