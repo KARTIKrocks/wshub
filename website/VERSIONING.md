@@ -2,7 +2,7 @@
 
 wshub ships often — eight minors between `v1.0.0` and `v1.7.0`, a span of four
 and a half months. Versioned docs get unmaintainable fast if every release
-snapshots the whole tree, so this site follows four rules.
+snapshots the whole tree, so this site follows five rules.
 
 ## The rules
 

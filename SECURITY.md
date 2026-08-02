@@ -97,7 +97,9 @@ rate limits, and read/write deadlines — is documented under
 | [`govulncheck`](.github/workflows/ci.yml) | Known advisories in dependencies, filtered to those reachable from this code's call graph, run per module |
 | [Dependabot](.github/dependabot.yml) | Dependency updates for all four Go modules and the docs site, plus the GitHub Actions themselves |
 
-Each of the three checks runs separately against the root module,
+CodeQL and `govulncheck` each run separately against the root module,
 `adapter/redis`, `adapter/nats`, and `prometheus`, because a scan started from
 the root stops at the nested `go.mod` boundaries and would otherwise miss the
-adapters entirely.
+adapters entirely. Dependabot is not a scanner — it watches each module's
+dependency manifest for updates, and is configured per directory for the same
+reason.

@@ -74,7 +74,13 @@ users who are not ready for the current wshub minor.
    make all          # vet + lint + test + build, every module
    make tidy-check   # fails if any go.mod/go.sum is untidy, leaving no diff
    make lint-docs    # Markdown across the repo
+
+   cd website && npm ci && npm run check   # biome, typecheck, full site build
    ```
+
+   The site build is not optional here. Docusaurus throws on broken internal
+   links, so a page renamed during the release prep fails at this step rather
+   than shipping a dead link into a snapshot.
 
 4. **Update the docs for the new version.** Version markers in `website/docs/`
    (`_1.8+_`, `_Added in 1.8._`, `// 1.8+`, `_Changed in 1.8._`) go in *before*

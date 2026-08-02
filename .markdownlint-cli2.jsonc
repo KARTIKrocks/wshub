@@ -6,7 +6,9 @@
 // levels, list indentation that silently changes nesting, unclosed fences. It
 // deliberately has no opinion on wording; see CONTRIBUTING.md for that.
 {
-  "globs": ["**/*.md"],
+  // .mdx too: Docusaurus pages can use either extension, and a page that
+  // switches to .mdx should not silently drop out of the lint scope.
+  "globs": ["**/*.md", "**/*.mdx"],
 
   // Without this, the scan walks straight into gitignored working directories
   // — local scratch notes, .claude, the leftover wshub-website/node_modules —

@@ -57,7 +57,10 @@ jobs:
   # Full build of every live version, then publish. Only from main.
   deploy:
     name: deploy
-    if: github.event_name != 'pull_request'
+    # Pinned to main rather than "not a pull request". workflow_dispatch can be
+    # run against any ref, so the looser condition would let a feature branch
+    # publish itself to Pages.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: check

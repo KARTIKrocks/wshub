@@ -60,6 +60,11 @@ import "github.com/KARTIKrocks/wshub"
 | `ErrMaxUserConnectionsReached` | User has reached max connections per user |
 | `ErrMaxRoomsReached` | Client has reached max rooms per client |
 | `ErrRateLimitExceeded` | Client exceeded the message rate limit |
+
+## Authentication Errors
+
+| Error | Description |
+| --- | --- |
 | `ErrAuthenticationFailed` | Authentication failed |
 | `ErrUnauthorized` | Client is not authorized |
 

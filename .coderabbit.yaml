@@ -63,9 +63,10 @@ reviews:
     - "!benchmarks/profiles/**"
     - "!benchmarks/results/**"
     # Frozen snapshots of website/docs taken at release time. A docs change
-    # normally lands in both places, so reviewing these too would surface every
-    # comment twice — and any suggestion here is unactionable by definition,
-    # since a published snapshot documents the behaviour of a shipped version.
+    # lands in website/docs only — snapshots are produced by cut-version and
+    # are never hand-edited, so any suggestion here is unactionable by
+    # definition: a published snapshot documents the behaviour of a shipped
+    # version, and changing it rewrites history for users still on it.
     - "!website/versioned_docs/**"
     - "!website/versioned_sidebars/**"
     # Generated raster assets and the logo SVGs; nothing to review as text.

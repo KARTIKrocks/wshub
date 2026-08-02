@@ -73,7 +73,7 @@ hub := wshub.NewHub(
 
 ## Origin Checking
 
-Since v1.7.0 the default is `AllowSameOrigin`. Earlier versions defaulted to
+_Changed in 1.7._ Since v1.7.0 the default is `AllowSameOrigin`. Earlier versions defaulted to
 `AllowAllOrigins`, which let any page on any site open an authenticated
 connection using the visitor's cookies (cross-site WebSocket hijacking).
 
