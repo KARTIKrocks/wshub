@@ -86,6 +86,7 @@ jobs:
           go mod edit \
             -replace github.com/KARTIKrocks/wshub=$GITHUB_WORKSPACE \
             -replace github.com/KARTIKrocks/wshub/adapter/redis=$GITHUB_WORKSPACE/adapter/redis
+          go mod tidy
       - name: Build
         working-directory: examples/multinode
         run: go build ./...
