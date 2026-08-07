@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/KARTIKrocks/wshub v1.7.0
-	github.com/nats-io/nats-server/v2 v2.14.3
+	github.com/nats-io/nats-server/v2 v2.14.4
 	github.com/nats-io/nats.go v1.52.0
 )
 
