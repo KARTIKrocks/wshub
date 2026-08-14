@@ -29,6 +29,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: ${{ matrix.go-version }}
+          check-latest: true
       - run: go test -race -count=1 ./...
 
   # The root module's ./... stops at nested go.mod boundaries, so the adapters
@@ -59,6 +60,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: ${{ matrix.go-version }}
+          check-latest: true
       - name: Resolve wshub to the working tree
         working-directory: ${{ matrix.module }}
         run: go mod edit -replace github.com/KARTIKrocks/wshub=$GITHUB_WORKSPACE
@@ -80,6 +82,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
+          check-latest: true
       - name: Resolve wshub and adapter to the working tree
         working-directory: examples/multinode
         run: |
@@ -99,6 +102,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
+          check-latest: true
       - name: Run tests with coverage
         run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
       - name: Upload coverage to Codecov
@@ -120,6 +124,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
+          check-latest: true
       # Submodules typecheck against the working tree for the same reason the
       # `submodules` job does; the root module needs no replace.
       - name: Resolve wshub to the working tree
@@ -178,6 +183,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
+          check-latest: true
       - name: Resolve wshub to the working tree
         if: matrix.module != '.'
         working-directory: ${{ matrix.module }}
@@ -235,4 +241,5 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
+          check-latest: true
       - run: go test -bench=. -benchmem ./...
