@@ -51,4 +51,4 @@ from the source and is always authoritative.
 
 ## Requirements
 
-Go 1.27 or later. _Changed in 1.8: previously Go 1.22 or later._
+Go 1.27 or later. _Changed in 1.8._ Previously Go 1.22 or later.

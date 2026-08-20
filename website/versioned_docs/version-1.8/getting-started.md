@@ -8,7 +8,7 @@ description: Install wshub and run a minimal WebSocket server with an echo handl
 
 ## Installation
 
-Requires **Go 1.27+**. _Changed in 1.8: previously Go 1.22+._
+Requires **Go 1.27+**. _Changed in 1.8._ Previously Go 1.22+.
 
 ```bash
 go get github.com/KARTIKrocks/wshub

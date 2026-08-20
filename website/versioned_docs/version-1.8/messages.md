@@ -47,12 +47,13 @@ var payload ChatMessage
 err := msg.JSON(&payload)  // Unmarshal as JSON
 ```
 
-> _Changed in 1.8:_ `JSON(v)` and `NewJSONMessage` now use `encoding/json/v2`
-> semantics: JSON object member names are matched case-sensitively (previously
-> case-insensitive), duplicate object member names are rejected (previously the
-> last one won), and invalid UTF-8 in a JSON string is rejected (previously
-> replaced with U+FFFD). Payloads whose field names already match your struct
-> tags exactly are unaffected.
+> _Changed in 1.8._ `JSON(v)` and `NewJSONMessage` now use `encoding/json/v2`
+> semantics: JSON object member names are matched case-sensitively, duplicate
+> object member names are rejected, and invalid UTF-8 in a JSON string is
+> rejected. Previously, member matching was case-insensitive, a duplicate name
+> silently kept the last value, and invalid UTF-8 was silently replaced with
+> U+FFFD. Payloads whose field names already match your struct tags exactly
+> are unaffected.
 
 ## Message Handler
 
