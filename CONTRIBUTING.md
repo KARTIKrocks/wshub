@@ -16,7 +16,7 @@ Thanks for your interest in contributing!
 
 ### Prerequisites
 
-- Go 1.22+
+- Go 1.27+
 - golangci-lint v2
 
 ### Running Tests

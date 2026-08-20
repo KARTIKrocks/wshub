@@ -82,15 +82,15 @@ type DebugStats struct {
 //	fmt.Println(m)           // pretty-print summary
 //	stats := m.Stats()       // programmatic access
 type DebugMetrics struct {
-	activeConnections int64 // atomic
-	totalConnections  int64 // atomic
-	totalMessagesRecv int64 // atomic
-	totalMessagesSent int64 // atomic
-	totalDropped      int64 // atomic
-	totalMessageBytes int64 // atomic
-	totalRoomJoins    int64 // atomic
-	totalRoomLeaves   int64 // atomic
-	activeRooms       int64 // atomic
+	activeConnections atomic.Int64
+	totalConnections  atomic.Int64
+	totalMessagesRecv atomic.Int64
+	totalMessagesSent atomic.Int64
+	totalDropped      atomic.Int64
+	totalMessageBytes atomic.Int64
+	totalRoomJoins    atomic.Int64
+	totalRoomLeaves   atomic.Int64
+	activeRooms       atomic.Int64
 
 	latencyMu    sync.Mutex
 	latencyTotal int64 // nanoseconds, protected by latencyMu
@@ -116,28 +116,28 @@ func NewDebugMetrics() *DebugMetrics {
 }
 
 func (d *DebugMetrics) IncrementConnections() {
-	atomic.AddInt64(&d.activeConnections, 1)
-	atomic.AddInt64(&d.totalConnections, 1)
+	d.activeConnections.Add(1)
+	d.totalConnections.Add(1)
 }
 
 func (d *DebugMetrics) DecrementConnections() {
-	atomic.AddInt64(&d.activeConnections, -1)
+	d.activeConnections.Add(-1)
 }
 
 func (d *DebugMetrics) IncrementMessagesReceived() {
-	atomic.AddInt64(&d.totalMessagesRecv, 1)
+	d.totalMessagesRecv.Add(1)
 }
 
 func (d *DebugMetrics) IncrementMessagesSent(count int) {
-	atomic.AddInt64(&d.totalMessagesSent, int64(count))
+	d.totalMessagesSent.Add(int64(count))
 }
 
 func (d *DebugMetrics) IncrementMessagesDropped() {
-	atomic.AddInt64(&d.totalDropped, 1)
+	d.totalDropped.Add(1)
 }
 
 func (d *DebugMetrics) RecordMessageSize(size int) {
-	atomic.AddInt64(&d.totalMessageBytes, int64(size))
+	d.totalMessageBytes.Add(int64(size))
 }
 
 func (d *DebugMetrics) RecordLatency(duration time.Duration) {
@@ -161,19 +161,19 @@ func (d *DebugMetrics) IncrementErrors(errorType string) {
 }
 
 func (d *DebugMetrics) IncrementRoomJoins() {
-	atomic.AddInt64(&d.totalRoomJoins, 1)
+	d.totalRoomJoins.Add(1)
 }
 
 func (d *DebugMetrics) IncrementRoomLeaves() {
-	atomic.AddInt64(&d.totalRoomLeaves, 1)
+	d.totalRoomLeaves.Add(1)
 }
 
 func (d *DebugMetrics) IncrementRooms() {
-	atomic.AddInt64(&d.activeRooms, 1)
+	d.activeRooms.Add(1)
 }
 
 func (d *DebugMetrics) DecrementRooms() {
-	atomic.AddInt64(&d.activeRooms, -1)
+	d.activeRooms.Add(-1)
 }
 
 // Stats returns a point-in-time snapshot of all metrics.
@@ -202,15 +202,15 @@ func (d *DebugMetrics) Stats() DebugStats {
 	d.startMu.RUnlock()
 
 	return DebugStats{
-		ActiveConnections: atomic.LoadInt64(&d.activeConnections),
-		TotalConnections:  atomic.LoadInt64(&d.totalConnections),
-		TotalMessagesRecv: atomic.LoadInt64(&d.totalMessagesRecv),
-		TotalMessagesSent: atomic.LoadInt64(&d.totalMessagesSent),
-		TotalDropped:      atomic.LoadInt64(&d.totalDropped),
-		TotalMessageBytes: atomic.LoadInt64(&d.totalMessageBytes),
-		TotalRoomJoins:    atomic.LoadInt64(&d.totalRoomJoins),
-		TotalRoomLeaves:   atomic.LoadInt64(&d.totalRoomLeaves),
-		ActiveRooms:       atomic.LoadInt64(&d.activeRooms),
+		ActiveConnections: d.activeConnections.Load(),
+		TotalConnections:  d.totalConnections.Load(),
+		TotalMessagesRecv: d.totalMessagesRecv.Load(),
+		TotalMessagesSent: d.totalMessagesSent.Load(),
+		TotalDropped:      d.totalDropped.Load(),
+		TotalMessageBytes: d.totalMessageBytes.Load(),
+		TotalRoomJoins:    d.totalRoomJoins.Load(),
+		TotalRoomLeaves:   d.totalRoomLeaves.Load(),
+		ActiveRooms:       d.activeRooms.Load(),
 		AvgLatency:        avgLatency,
 		AvgBroadcast:      avgBroadcast,
 		Errors:            errCopy,
@@ -220,15 +220,15 @@ func (d *DebugMetrics) Stats() DebugStats {
 
 // Reset zeroes all counters and resets the uptime clock.
 func (d *DebugMetrics) Reset() {
-	atomic.StoreInt64(&d.activeConnections, 0)
-	atomic.StoreInt64(&d.totalConnections, 0)
-	atomic.StoreInt64(&d.totalMessagesRecv, 0)
-	atomic.StoreInt64(&d.totalMessagesSent, 0)
-	atomic.StoreInt64(&d.totalDropped, 0)
-	atomic.StoreInt64(&d.totalMessageBytes, 0)
-	atomic.StoreInt64(&d.totalRoomJoins, 0)
-	atomic.StoreInt64(&d.totalRoomLeaves, 0)
-	atomic.StoreInt64(&d.activeRooms, 0)
+	d.activeConnections.Store(0)
+	d.totalConnections.Store(0)
+	d.totalMessagesRecv.Store(0)
+	d.totalMessagesSent.Store(0)
+	d.totalDropped.Store(0)
+	d.totalMessageBytes.Store(0)
+	d.totalRoomJoins.Store(0)
+	d.totalRoomLeaves.Store(0)
+	d.activeRooms.Store(0)
 
 	d.latencyMu.Lock()
 	d.latencyTotal = 0

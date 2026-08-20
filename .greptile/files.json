@@ -1,0 +1,21 @@
+{
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "description": "Repository conventions: module layout, build/test/lint commands, concurrency invariants, branch and commit conventions."
+    },
+    {
+      "path": "doc.go",
+      "description": "Package-level overview and usage patterns for the Hub API."
+    },
+    {
+      "path": "adapter.go",
+      "description": "The Adapter interface and AdapterMessage wire format that adapter/redis and adapter/nats both implement.",
+      "scope": ["adapter/**/*.go"]
+    },
+    {
+      "path": ".golangci.yml",
+      "description": "The linter ruleset already enforced in CI; avoid duplicating what golangci-lint already flags."
+    }
+  ]
+}

@@ -95,13 +95,11 @@ func TestRouterConcurrentAccess(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 100 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if err := router.Handle(nil, msg); err != nil {
 				errCount.Add(1)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

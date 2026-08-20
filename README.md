@@ -48,7 +48,7 @@
 
 ## Installation
 
-Requires **Go 1.22+**.
+Requires **Go 1.27+**.
 
 ```bash
 go get github.com/KARTIKrocks/wshub
@@ -148,7 +148,7 @@ Two kinds of numbers below:
 2. **End-to-end load tests** (real `httptest.Server` + `gorilla/websocket`
    dialer) — measures what an actual deployment will see.
 
-Measured on an Intel i5-11400H @ 2.70GHz (12 cores), Go 1.26, Linux.
+Measured on an Intel i5-11400H @ 2.70GHz (12 cores), Go 1.27, Linux.
 
 Run them yourself:
 
@@ -166,62 +166,62 @@ channels. They do **not** include TCP, writePump, or remote-client work.
 
 | Operation               | Clients   | Time    | Allocs |
 | ----------------------- | --------- | ------- | ------ |
-| `Broadcast`             | 100,000   | 22.0 ms | 0      |
-| `Broadcast`             | 1,000,000 | 263 ms  | 0      |
-| `BroadcastToRoom`       | 100,000   | 23.2 ms | 0      |
-| `BroadcastToRoom`       | 1,000,000 | 260 ms  | 0      |
-| `BroadcastExcept`       | 100,000   | 25.9 ms | 1      |
-| `BroadcastExcept`       | 1,000,000 | 294 ms  | 1      |
-| `BroadcastToRoomExcept` | 100,000   | 26.0 ms | 1      |
-| `BroadcastToRoomExcept` | 1,000,000 | 277 ms  | 1      |
+| `Broadcast`             | 100,000   | 22.6 ms | 0      |
+| `Broadcast`             | 1,000,000 | 269 ms  | 0      |
+| `BroadcastToRoom`       | 100,000   | 25.6 ms | 0      |
+| `BroadcastToRoom`       | 1,000,000 | 293 ms  | 0      |
+| `BroadcastExcept`       | 100,000   | 23.4 ms | 1      |
+| `BroadcastExcept`       | 1,000,000 | 274 ms  | 1      |
+| `BroadcastToRoomExcept` | 100,000   | 23.0 ms | 1      |
+| `BroadcastToRoomExcept` | 1,000,000 | 269 ms  | 1      |
 
 #### Targeted Send (O(1) at any scale, zero allocations)
 
 | Operation      | Scale             | Time   | Allocs |
 | -------------- | ----------------- | ------ | ------ |
-| `SendToClient` | 100,000 clients   | 129 ns | 0      |
-| `SendToClient` | 1,000,000 clients | 130 ns | 0      |
-| `SendToUser`   | 100,000 users     | 198 ns | 1      |
-| `SendToUser`   | 1,000,000 users   | 192 ns | 1      |
+| `SendToClient` | 100,000 clients   | 105 ns | 0      |
+| `SendToClient` | 1,000,000 clients | 112 ns | 0      |
+| `SendToUser`   | 100,000 users     | 167 ns | 1      |
+| `SendToUser`   | 1,000,000 users   | 166 ns | 1      |
 
 #### Global Counts — Presence (zero allocations)
 
-| Operation           | Nodes | Time   | Allocs |
-| ------------------- | ----- | ------ | ------ |
-| `GlobalClientCount` | 5     | 63 ns  | 0      |
-| `GlobalClientCount` | 50    | 397 ns | 0      |
-| `GlobalClientCount` | 100   | 715 ns | 0      |
-| `GlobalClientCount` | 500   | 4.2 μs | 0      |
-| `GlobalRoomCount`   | 5     | 118 ns | 0      |
-| `GlobalRoomCount`   | 50    | 823 ns | 0      |
-| `GlobalRoomCount`   | 100   | 1.7 μs | 0      |
-| `GlobalRoomCount`   | 500   | 9.7 μs | 0      |
+| Operation           | Nodes | Time    | Allocs |
+| ------------------- | ----- | ------- | ------ |
+| `GlobalClientCount` | 5     | 55.1 ns | 0      |
+| `GlobalClientCount` | 50    | 360 ns  | 0      |
+| `GlobalClientCount` | 100   | 684 ns  | 0      |
+| `GlobalClientCount` | 500   | 3.82 μs | 0      |
+| `GlobalRoomCount`   | 5     | 111 ns  | 0      |
+| `GlobalRoomCount`   | 50    | 892 ns  | 0      |
+| `GlobalRoomCount`   | 100   | 1.54 μs | 0      |
+| `GlobalRoomCount`   | 500   | 9.16 μs | 0      |
 
 #### Client & Room Lookups (zero allocations)
 
 | Operation                   | Time    | Allocs |
 | --------------------------- | ------- | ------ |
-| `GetClient` (1,000 clients) | 17.7 ns | 0      |
-| `ClientCount`               | 0.28 ns | 0      |
-| `GetClientByUserID`         | 51.3 ns | 0      |
-| `RoomExists`                | 23.6 ns | 0      |
-| `RoomCount`                 | 22.1 ns | 0      |
-| `GetMetadata`               | 17.0 ns | 0      |
-| `SetMetadata`               | 30.6 ns | 0      |
+| `GetClient` (1,000 clients) | 16.5 ns | 0      |
+| `ClientCount`               | 0.25 ns | 0      |
+| `GetClientByUserID`         | 45.8 ns | 0      |
+| `RoomExists`                | 15.6 ns | 0      |
+| `RoomCount`                 | 15.0 ns | 0      |
+| `GetMetadata`               | 16.7 ns | 0      |
+| `SetMetadata`               | 28.0 ns | 0      |
 
 #### Client Send
 
 | Operation     | Time    | Allocs |
 | ------------- | ------- | ------ |
-| `Send` (text) | 82.9 ns | 1      |
-| `SendJSON`    | 495 ns  | 5      |
+| `Send` (text) | 61.5 ns | 1      |
+| `SendJSON`    | 501 ns  | 5      |
 
 #### Middleware Chain
 
 | Mode                 | Time    | Allocs |
 | -------------------- | ------- | ------ |
-| Built (cached)       | 14.3 ns | 0      |
-| Unbuilt (on-the-fly) | 17.0 ns | 0      |
+| Built (cached)       | 12.5 ns | 0      |
+| Unbuilt (on-the-fly) | 12.4 ns | 0      |
 
 ### Real-world load tests
 
@@ -234,17 +234,17 @@ timestamp in the payload and computing `now - sent` on receive. Reproduce with
 
 | Clients | Connect time | Rate          | Mem/conn |
 | ------- | ------------ | ------------- | -------- |
-| 1,000   | 122 ms       | 8,205 conn/s  | 24.4 KB  |
-| 5,000   | 371 ms       | 13,486 conn/s | 20.5 KB  |
-| 10,000  | 485 ms       | 20,609 conn/s | 24.4 KB  |
+| 1,000   | 59 ms        | 15,754 conn/s | 27.1 KB  |
+| 5,000   | 162 ms       | 29,853 conn/s | 24.0 KB  |
+| 10,000  | 263 ms       | 36,891 conn/s | 25.9 KB  |
 
 #### Fanout — single broadcaster, 100 msg/s for 10s, 128 B payload
 
-| Clients | Throughput    | p50      | p95      | p99      |
-| ------- | ------------- | -------- | -------- | -------- |
-| 1,000   | 100,000 msg/s | 2.53 ms  | 4.83 ms  | 6.68 ms  |
-| 5,000   | 497,000 msg/s | 44.04 ms | 396.9 ms | 632.6 ms |
-| 10,000  | 397,284 msg/s | 3.22 s   | 6.03 s   | 6.33 s   |
+| Clients | Throughput    | p50     | p95     | p99     |
+| ------- | ------------- | ------- | ------- | ------- |
+| 1,000   | 100,000 msg/s | 1.48 ms | 1.85 ms | 2.75 ms |
+| 5,000   | 499,500 msg/s | 7.91 ms | 19.0 ms | 31.8 ms |
+| 10,000  | 693,900 msg/s | 1.72 s  | 3.19 s  | 3.34 s  |
 
 > Past ~5K clients on a single node, fanout latency grows steeply — the bottleneck
 > is Go scheduler pressure across `3 × clients` goroutines (readPump + writePump
@@ -256,14 +256,14 @@ timestamp in the payload and computing `now - sent` on receive. Reproduce with
 
 | Clients | Rooms | Per-room p50 | p99      |
 | ------- | ----- | ------------ | -------- |
-| 5,000   | 100   | 11.01 ms     | 15.19 ms |
-| 10,000  | 100   | 29.15 ms     | 36.05 ms |
+| 5,000   | 100   | 5.68 ms      | 7.88 ms  |
+| 10,000  | 100   | 12.29 ms     | 19.01 ms |
 
 #### Echo — per-connection round-trip (5,000 clients, 10s)
 
 | RTT/sec | p50      | p95      | p99      |
 | ------- | -------- | -------- | -------- |
-| 228,380 | 19.93 ms | 35.35 ms | 72.52 ms |
+| 318,348 | 14.4 ms  | 24.1 ms  | 48.0 ms  |
 
 > **Note on `WithParallelBroadcast`:** in real load tests, parallel dispatch is
 > consistently _slower_ than the default serial path because the per-call cost
@@ -279,20 +279,20 @@ timestamp in the payload and computing `now - sent` on receive. Reproduce with
 
 | Operation                 | Time    | Allocs |
 | ------------------------- | ------- | ------ |
-| `GetClient`               | 31.0 ns | 0      |
-| `ClientCount`             | 0.23 ns | 0      |
-| `Metadata` (set+get)      | 76.5 ns | 0      |
-| `Broadcast` (100 clients) | 5.9 μs  | 120    |
+| `GetClient`               | 24.7 ns | 0      |
+| `ClientCount`             | 0.17 ns | 0      |
+| `Metadata` (set+get)      | 66.0 ns | 0      |
+| `Broadcast` (100 clients) | 4.4 μs  | 121    |
 
 ### Message Creation
 
 | Operation           | Time    | Allocs |
 | ------------------- | ------- | ------ |
-| `NewMessage`        | 30.5 ns | 0      |
-| `NewTextMessage`    | 32.0 ns | 0      |
-| `NewBinaryMessage`  | 30.2 ns | 0      |
-| `NewJSONMessage`    | 820 ns  | 9      |
-| `NewRawJSONMessage` | 30.9 ns | 0      |
+| `NewMessage`        | 28.3 ns | 0      |
+| `NewTextMessage`    | 28.2 ns | 0      |
+| `NewBinaryMessage`  | 28.1 ns | 0      |
+| `NewJSONMessage`    | 773 ns  | 8      |
+| `NewRawJSONMessage` | 28.3 ns | 0      |
 
 ## Thread Safety
 

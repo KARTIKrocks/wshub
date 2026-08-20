@@ -5,6 +5,61 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-08-20
+
+### Changed
+
+- **BREAKING: Go 1.27 is now required**, for the core module and every
+  submodule (previously 1.22 for the core, 1.24–1.25 across the submodules).
+  This is what unlocks `encoding/json/v2` and the standard-library `uuid`
+  package used below.
+
+  **Who is affected:** anyone building wshub with a Go toolchain older than
+  1.27 — the build fails at `go build`/`go get`, not at runtime.
+
+  **Who is not affected:** anyone already on Go 1.27+, and anyone consuming a
+  prebuilt binary rather than building from source.
+
+- **BREAKING (runtime behavior): `Message.JSON(v)` and `NewJSONMessage(v)` now
+  decode/encode using `encoding/json/v2` instead of `encoding/json` v1.** This
+  is the change the Go 1.27 floor exists to enable — `Message.JSON` decodes
+  client-controlled input, and v2's stricter defaults close three real gaps:
+  JSON object member names are matched **case-sensitively** (v1 matched
+  case-insensitively), **duplicate object member names are rejected** (v1
+  silently kept the last one), and **invalid UTF-8 in a JSON string is
+  rejected** (v1 silently replaced it with U+FFFD).
+
+  **Who is affected:** callers whose struct tags don't exactly match the
+  casing of the JSON they receive, and callers unknowingly relying on lenient
+  handling of duplicate keys or invalid UTF-8 in client payloads — `msg.JSON(&v)`
+  now returns an error in those cases instead of silently producing a
+  possibly-wrong value.
+
+  **Who is not affected:** the overwhelming majority of callers, whose struct
+  tags already match their wire format exactly. wshub's own inter-node wire
+  formats (`AdapterMessage`, `nodePresence`) are both produced and consumed by
+  wshub itself with exact-matching tags, so cluster traffic is unaffected.
+
+- **`google/uuid` dependency removed from the root module.** `hub.go` and
+  `client.go` now generate IDs with the new standard-library `uuid` package
+  (Go 1.27+) instead — same `uuid.New().String()` call shape, one fewer
+  third-party dependency in the core package.
+
+- CI (`ci.yml`, `codeql.yml`) no longer hardcodes Go versions. The "floor" leg
+  now reads `go-version-file` from each module's own `go.mod` and the
+  "current release" leg uses Go's `stable` alias, so neither a floor bump nor
+  a new Go release needs a workflow edit again. golangci-lint's pinned version
+  is now read from the `Makefile` (`make print-golangci-lint-version`) instead
+  of being duplicated in the workflow.
+- Added [`.greptile/`](.greptile/) configuration for automated PR review,
+  alongside the existing `.coderabbit.yaml`.
+- Applied Go 1.27's new `go fix` modernizers repo-wide: `DebugMetrics`'
+  counters are now `atomic.Int64` fields instead of raw `int64` with manual
+  `atomic.AddInt64`/`LoadInt64`/`StoreInt64` calls, goroutine launches use
+  `sync.WaitGroup.Go` instead of the `Add`/`go`/`defer Done` pattern, and
+  `middleware.go`'s reverse-order loop uses `slices.Backward`. No behavior
+  change.
+
 ## [1.7.0] - 2026-07-27
 
 The adapter fixes below ship in the separately-versioned adapter modules
@@ -364,6 +419,7 @@ v1.7.0 — they work against v1.6.1 as well.
 - Examples: simple echo server, chat with rooms, JWT auth, metrics endpoint
 - Documentation: README, QUICKSTART, SCALABILITY, CONTRIBUTING
 
+[1.8.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.8.0
 [1.7.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.7.0
 [1.5.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.5.0
 [1.4.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.4.0

@@ -1,6 +1,6 @@
 module github.com/KARTIKrocks/wshub/examples/multinode
 
-go 1.24
+go 1.27
 
 require (
 	github.com/KARTIKrocks/wshub v1.7.0

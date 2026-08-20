@@ -1,6 +1,6 @@
 module github.com/KARTIKrocks/wshub/prometheus
 
-go 1.25.0
+go 1.27
 
 require (
 	github.com/KARTIKrocks/wshub v1.7.0
