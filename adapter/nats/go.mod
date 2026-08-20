@@ -5,7 +5,7 @@ go 1.27
 require (
 	github.com/KARTIKrocks/wshub v1.7.0
 	github.com/nats-io/nats-server/v2 v2.14.5
-	github.com/nats-io/nats.go v1.52.0
+	github.com/nats-io/nats.go v1.53.1
 )
 
 require (
