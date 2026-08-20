@@ -20,7 +20,7 @@
     },
     {
       "id": "go-goroutine-lifecycle",
-      "rule": "Every goroutine spawned must have a visible termination path — context cancellation, a closed channel, or a WaitGroup — and that path should be exercised by a test. Flag a goroutine with no visible exit condition, and flag a WaitGroup.Add call that is not clearly paired with the Wait it corresponds to.",
+      "rule": "Every goroutine spawned must have a visible termination path — a natural return after bounded work, context cancellation, or a closed channel it selects on — and that path should be exercised by a test. A sync.WaitGroup only observes that goroutines have finished; it is not itself a termination mechanism, so do not accept 'it's covered by a WaitGroup' as a substitute for an actual exit condition. Separately, flag a WaitGroup.Add call that is not clearly paired with the Wait it corresponds to.",
       "scope": ["**/*.go"],
       "severity": "high"
     },

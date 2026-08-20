@@ -1,0 +1,4 @@
+{
+  "disabledRules": ["go-error-wrapping"],
+  "instructions": "Examples are illustrative, copied by users, and not part of the public API or coverage target. Relax error-handling strictness (see disabledRules), but still ensure they compile, demonstrate correct API usage, and don't ship unsafe defaults such as missing http.Server timeouts."
+}
