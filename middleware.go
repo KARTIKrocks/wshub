@@ -1,6 +1,7 @@
 package wshub
 
 import (
+	"slices"
 	"sync"
 	"time"
 )
@@ -48,8 +49,8 @@ func (m *MiddlewareChain) Build() *MiddlewareChain {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	handler := m.handler
-	for i := len(m.middlewares) - 1; i >= 0; i-- {
-		handler = m.middlewares[i](handler)
+	for _, v := range slices.Backward(m.middlewares) {
+		handler = v(handler)
 	}
 	m.built = handler
 	return m
@@ -72,8 +73,8 @@ func (m *MiddlewareChain) Execute(client *Client, msg *Message) error {
 	m.mu.Lock()
 	if m.built == nil {
 		handler := m.handler
-		for i := len(m.middlewares) - 1; i >= 0; i-- {
-			handler = m.middlewares[i](handler)
+		for _, v := range slices.Backward(m.middlewares) {
+			handler = v(handler)
 		}
 		m.built = handler
 	}

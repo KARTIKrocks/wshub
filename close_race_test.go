@@ -64,13 +64,11 @@ func TestCloseWithCodeDoesNotRaceWithSenders(t *testing.T) {
 
 	// Broadcast hard. The clients never read, so every send buffer fills and the
 	// DropOldest evict/enqueue path — the one that races with the close — runs hot.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for range 2000 {
 			_ = hub.BroadcastToRoom("room", payload)
 		}
-	}()
+	})
 
 	// ...and close the clients underneath the broadcaster, but only once the send
 	// buffers have actually backed up, so the close lands while senders are in
@@ -78,9 +76,7 @@ func TestCloseWithCodeDoesNotRaceWithSenders(t *testing.T) {
 	// assert: this goroutine is not the test goroutine, so it must not call
 	// t.Fatal, and a timeout here only makes the race window less likely to open,
 	// never the test flaky.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		deadline := time.Now().Add(2 * time.Second)
 		for time.Now().Before(deadline) && !anyBufferFull(hub.RoomClients("room")) {
 			time.Sleep(time.Millisecond)
@@ -88,7 +84,7 @@ func TestCloseWithCodeDoesNotRaceWithSenders(t *testing.T) {
 		for _, c := range hub.RoomClients("room") {
 			_ = c.CloseWithCode(1013, "too slow")
 		}
-	}()
+	})
 
 	wg.Wait()
 }

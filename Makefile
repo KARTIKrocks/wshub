@@ -1,6 +1,6 @@
-GOLANGCI_LINT_VERSION := v2.12.2
-GOIMPORTS_VERSION := v0.48.0
-GOVULNCHECK_VERSION := v1.6.0
+GOLANGCI_LINT_VERSION := v2.13.0
+GOIMPORTS_VERSION := v0.49.0
+GOVULNCHECK_VERSION := v1.7.0
 
 # The Markdown linter. Versioned in website/package.json rather than pinned
 # here, so Dependabot keeps it current along with the rest of the docs toolchain.
@@ -11,7 +11,7 @@ MARKDOWNLINT := website/node_modules/.bin/markdownlint-cli2
 SUBMODULES := adapter/redis adapter/nats prometheus
 EXAMPLE_MODULES := examples/multinode
 
-.PHONY: all setup deps work tidy tidy-modules tidy-check test test-v test-modules test-prometheus vet vet-modules lint lint-modules lint-docs lint-docs-fix lint-fix fix vuln vuln-modules print-govulncheck-version build build-examples bench fuzz fmt cover clean ci loadtest
+.PHONY: all setup deps work tidy tidy-modules tidy-check test test-v test-modules test-prometheus vet vet-modules lint lint-modules lint-docs lint-docs-fix lint-fix fix vuln vuln-modules print-govulncheck-version print-golangci-lint-version build build-examples bench fuzz fmt cover clean ci loadtest
 
 all: fmt vet vet-modules lint lint-modules test test-modules build build-examples
 
@@ -138,6 +138,12 @@ vuln: setup
 ## cannot drift apart.
 print-govulncheck-version:
 	@echo $(GOVULNCHECK_VERSION)
+
+## Print the pinned linter version. CI resolves golangci-lint-action's version
+## input from this rather than hardcoding a second copy of the number, so the
+## workflow and this file cannot drift apart.
+print-golangci-lint-version:
+	@echo $(GOLANGCI_LINT_VERSION)
 
 ## Scan every nested module. Separate for the same reason lint-modules is: the
 ## root module's ./... stops at nested go.mod boundaries, so the adapters' own

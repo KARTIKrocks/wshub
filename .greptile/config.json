@@ -1,0 +1,70 @@
+{
+  "strictness": 2,
+  "commentTypes": ["logic", "syntax", "style"],
+  "triggerOnUpdates": true,
+  "statusCheck": true,
+  "ignorePatterns": "**/mock_*.go\n**/*_mock.go\n**/testdata/**\n**/go.sum\n**/vendor/**\n**/node_modules/**\n**/package-lock.json\nbenchmarks/profiles/**\nbenchmarks/results/**\nwebsite/versioned_docs/**\nwebsite/versioned_sidebars/**\nwebsite/static/**",
+  "instructions": "wshub is a production WebSocket hub library for Go (github.com/KARTIKrocks/wshub): rooms, broadcasting, multi-node clustering, middleware, hooks, backpressure, observability. It ships no business logic. Prioritize concurrency correctness, goroutine lifecycle, and error handling over style. The core module depends on nothing but the standard library and gorilla/websocket. See AGENTS.md for repo conventions and .greptile/rules.md for style and pattern rationale.",
+  "rules": [
+    {
+      "id": "go-error-wrapping",
+      "rule": "An error returned from a called function must be wrapped with %w via fmt.Errorf before being returned further, unless it is a sentinel already meant to be compared directly with errors.Is. An error must never be discarded by assigning to _ without a comment explaining why it is safe to ignore.",
+      "scope": ["**/*.go"],
+      "severity": "medium"
+    },
+    {
+      "id": "go-exported-docs",
+      "rule": "Every new or newly-exported type, function, method, and constant must have a doc comment that starts with the identifier's own name.",
+      "scope": ["**/*.go"],
+      "severity": "low"
+    },
+    {
+      "id": "go-goroutine-lifecycle",
+      "rule": "Every goroutine spawned must have a visible termination path — a natural return after bounded work, context cancellation, or a closed channel it selects on — and that path should be exercised by a test. A sync.WaitGroup only observes that goroutines have finished; it is not itself a termination mechanism, so do not accept 'it's covered by a WaitGroup' as a substitute for an actual exit condition. Separately, flag a WaitGroup.Add call that is not clearly paired with the Wait it corresponds to.",
+      "scope": ["**/*.go"],
+      "severity": "high"
+    },
+    {
+      "id": "hub-no-send-channel-close",
+      "rule": "Never suggest calling close() on Client.send or any code path that closes it directly. Producers (Hub.trySendErr, Client.SendMessageWithContext) send on that channel without holding a lock a closer could take, so closing it races with them. Shutdown must go through Client.done, with CloseWithCode setting the graceful flag so writePump flushes the queue and sends a close frame, and handleUnregister draining the buffer.",
+      "scope": ["hub.go", "client.go"],
+      "severity": "high"
+    },
+    {
+      "id": "client-single-writer-reader",
+      "rule": "gorilla/websocket permits exactly one concurrent writer and one concurrent reader per connection. Flag any write to the underlying connection that bypasses writePump, and any change to a deadline, ping/pong handler, or error path that could leave readPump or writePump running after the other has torn down the connection.",
+      "scope": ["client.go"],
+      "severity": "high"
+    },
+    {
+      "id": "adapter-context-and-errors",
+      "rule": "Publish and Subscribe implementations must honor context cancellation and must not silently drop a message on a backend error — the error must propagate to the caller or to a registered error handler such as WithUnmarshalErrorHandler.",
+      "scope": ["adapter/**/*.go"],
+      "severity": "medium"
+    },
+    {
+      "id": "hot-path-zero-alloc",
+      "rule": "Code in the per-client broadcast/dispatch loop (hub.go, client.go, presence.go, router.go, middleware.go) must not introduce a heap allocation per call — no new map or unpreallocated slice append inside a loop over clients, no interface boxing on the hot path. If an allocation is genuinely unavoidable, say so explicitly rather than flagging it as an oversight.",
+      "scope": ["hub.go", "client.go", "presence.go", "router.go", "middleware.go"],
+      "severity": "medium"
+    },
+    {
+      "id": "test-no-sleep-sync",
+      "rule": "A test must not use time.Sleep for synchronization between goroutines; use channels, sync primitives, or deterministic polling instead. Every test must be safe to run with -race and t.Parallel() where nothing shared is mutated.",
+      "scope": ["**/*_test.go"],
+      "severity": "medium"
+    },
+    {
+      "id": "website-docs-version-markers",
+      "rule": "A documented API addition on this page must carry a version marker in one of these exact forms: '_X.Y+_' appended to a table cell's description, '_Added in X.Y._' opening a prose paragraph, or a trailing '// X.Y+' comment inside a code block. Documented behaviour that changed must use '_Changed in X.Y._' followed by one line describing the prior behaviour. See website/VERSIONING.md rules 1 and 2. Never suggest an edit to website/versioned_docs/ — those are frozen release snapshots.",
+      "scope": ["website/docs/**/*.md"],
+      "severity": "medium"
+    },
+    {
+      "id": "root-module-no-new-deps",
+      "rule": "Do not add a new third-party dependency to the root module. The root package (files directly in the repository root) must depend only on the standard library and gorilla/websocket; new dependencies belong in a submodule (adapter/**, prometheus/) if anywhere.",
+      "scope": ["*.go"],
+      "severity": "high"
+    }
+  ]
+}

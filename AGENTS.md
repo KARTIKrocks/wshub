@@ -81,7 +81,8 @@ make cover            # coverage report -> coverage.html
 
 ## Conventions
 
-- **Go 1.22+** for the core module (submodules pin newer versions in their `go.mod`).
+- **Go 1.27+** for every module — the core package and all submodules declare the
+  same floor.
 - Follow standard Go style; `gofmt` + `goimports` are mandatory (`make fmt`).
 - **New exported types and functions must have doc comments** starting with the
   identifier name — they are the pkg.go.dev reference. This is not yet enforced
@@ -121,9 +122,11 @@ make cover            # coverage report -> coverage.html
   are working state and do not need to be tidy — they will be collapsed.
 - Never push directly to `main`; every change goes through a PR, including
   single-line ones.
-- CI (`.github/workflows/ci.yml`) tests the root module at the `go.mod` floor
-  (1.22) and the current release (1.26), tests each submodule at its own minimum
-  and at the current release, and uploads coverage to Codecov. The `ci` job is
+- CI (`.github/workflows/ci.yml`) tests the root module and each submodule at
+  two self-tracking legs: `go-version-file` (whatever that module's own `go.mod`
+  declares as the floor) and `stable` (whatever Go's current release is). Neither
+  leg is a hardcoded version string, so a floor bump or a new Go release needs no
+  workflow edit. It also uploads coverage to Codecov. The `ci` job is
   an aggregate gate and is meant to be the **only** required status check —
   requiring the matrix jobs directly orphans the required context whenever a
   matrix value changes. Linting covers the four library modules — root,
@@ -135,6 +138,24 @@ make cover            # coverage report -> coverage.html
 Releases have their own ordering constraints because this is a multi-module
 repository, and Go module tags are permanent once the proxy has served them —
 read [`RELEASING.md`](RELEASING.md) before tagging anything.
+
+## Automated code review
+
+Two bots review every PR; both are config-as-code and should stay in sync with
+these conventions when they change:
+
+- **CodeRabbit** — [`.coderabbit.yaml`](.coderabbit.yaml). Advisory only
+  (`request_changes_workflow: false`); CI is the actual merge gate.
+- **Greptile** — [`.greptile/`](.greptile/) (`config.json` for scoped rules and
+  settings, `rules.md` for freeform style guidance, `files.json` for context
+  files it should read). Also advisory.
+
+Both carry per-path guidance roughly mirroring each other (root Go files vs.
+`adapter/**` vs. `client.go`/`hub.go`'s no-close-send-channel rule vs.
+`website/docs/**`'s version-marker requirement). If you change a convention
+documented in this file that either bot enforces, update both configs in the
+same PR — a stale bot rule actively misleads the next contributor it comments
+on.
 
 ## Examples & load testing
 

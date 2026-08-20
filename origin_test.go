@@ -203,11 +203,9 @@ func TestCheckOriginRateLimitIsConcurrencySafe(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 64 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			hub.checkOrigin(originRequest("https://attacker.example", "example.com"))
-		}()
+		})
 	}
 	wg.Wait()
 

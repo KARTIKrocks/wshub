@@ -447,13 +447,11 @@ func TestCloseIsConcurrencySafe(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 16 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if err := a.Close(); err != nil {
 				t.Errorf("Close: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }
@@ -480,15 +478,13 @@ func TestConcurrentPublish(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := range publishers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			msg := sampleMessage()
 			msg.ClientID = string(rune('a' + i))
 			if err := publisher.Publish(context.Background(), msg); err != nil {
 				t.Errorf("Publish: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

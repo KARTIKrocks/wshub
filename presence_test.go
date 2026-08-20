@@ -258,7 +258,7 @@ func TestPresenceConcurrentAccess(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for i := 0; i < 50; i++ {
+		for range 50 {
 			_ = hubA.GlobalClientCount()
 			_ = hubA.GlobalRoomCount("lobby")
 			_ = hubB.GlobalClientCount()
@@ -267,7 +267,7 @@ func TestPresenceConcurrentAccess(t *testing.T) {
 		}
 	}()
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		dialA()
 		dialB()
 		time.Sleep(10 * time.Millisecond)
