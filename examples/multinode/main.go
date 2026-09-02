@@ -118,7 +118,9 @@ func startHTTP(n *node) *http.Server {
 		fmt.Fprintf(w, page, n.hub.NodeID(), n.addr)
 	})
 
-	server := &http.Server{Addr: n.addr, Handler: mux}
+	// ReadHeaderTimeout guards against slow-header (Slowloris) connections
+	// holding a goroutine open indefinitely.
+	server := &http.Server{Addr: n.addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("http %s: %v", n.addr, err)

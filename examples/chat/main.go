@@ -1,3 +1,15 @@
+// Example: room-based chat server with wshub.
+//
+// This demonstrates rooms, targeted broadcasting, lifecycle hooks (join/leave
+// notifications), a middleware chain, and event-based message routing via
+// wshub.Router.
+//
+// Usage:
+//
+//	go run ./examples/chat
+//	open http://localhost:8080
+//
+// Set PORT to run on something other than 8080.
 package main
 
 import (
@@ -348,6 +360,11 @@ func formatLogArgs(args []any) string {
 }
 
 func main() {
+	addr := ":8080"
+	if p := os.Getenv("PORT"); p != "" {
+		addr = ":" + p
+	}
+
 	// Create chat server
 	chatServer := NewChatServer()
 	chatServer.Start()
@@ -358,10 +375,11 @@ func main() {
 		http.ServeFile(w, r, "chat.html")
 	})
 
-	// Start HTTP server
-	server := &http.Server{Addr: ":8080"}
+	// Start HTTP server. ReadHeaderTimeout guards against slow-header
+	// (Slowloris) connections holding a goroutine open indefinitely.
+	server := &http.Server{Addr: addr, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
-		log.Println("Chat server starting on :8080")
+		log.Printf("Chat server starting on %s", addr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal(err)
 		}

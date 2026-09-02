@@ -2,6 +2,13 @@
 //
 // This demonstrates using BeforeConnect to validate a token from the
 // query string and AfterConnect to set the user ID on the client.
+//
+// Usage:
+//
+//	go run ./examples/auth
+//	open http://localhost:8080
+//
+// Set PORT to run on something other than 8080.
 package main
 
 import (
@@ -97,6 +104,11 @@ func authMiddleware() wshub.Middleware {
 }
 
 func main() {
+	addr := ":8080"
+	if p := os.Getenv("PORT"); p != "" {
+		addr = ":" + p
+	}
+
 	var hub *wshub.Hub
 	hub = wshub.NewHub(
 		wshub.WithHooks(wshub.Hooks{
@@ -157,9 +169,11 @@ ws.onclose = () => { document.getElementById("log").textContent += "disconnected
 	})
 	http.HandleFunc("/ws", hub.HandleHTTP())
 
-	server := &http.Server{Addr: ":8080"}
+	// ReadHeaderTimeout guards against slow-header (Slowloris) connections
+	// holding a goroutine open indefinitely.
+	server := &http.Server{Addr: addr, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
-		log.Println("Auth example running on :8080")
+		log.Printf("Auth example running on %s", addr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal(err)
 		}

@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>wshub chat example</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    margin: 0;
+    padding: 24px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: #94a3b8; font-size: 13px; margin: 0 0 20px; }
+  .layout { display: flex; gap: 16px; max-width: 900px; }
+  .panel {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .side { width: 200px; display: flex; flex-direction: column; gap: 12px; }
+  .side h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #94a3b8; margin: 0 0 8px; }
+  .side ul { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+  .side li { padding: 2px 0; }
+  #log {
+    height: 320px;
+    overflow-y: auto;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  #log .line { padding: 1px 0; }
+  #log .system { color: #64748b; font-style: italic; }
+  #log .me { color: #38bdf8; }
+  .row { display: flex; gap: 8px; margin-top: 10px; }
+  input {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    color: #e2e8f0;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+  input:focus { outline: none; border-color: #38bdf8; }
+  #msg { flex: 1; }
+  button {
+    background: #38bdf8;
+    color: #0f172a;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { background: #7dd3fc; }
+  button:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+  #setup { margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<h1>wshub chat example</h1>
+<p class="sub">A minimal room-based chat built on wshub's rooms, broadcasting and hooks.</p>
+
+<div class="layout">
+  <div class="panel main">
+    <div id="setup" class="row">
+      <input id="username" placeholder="Your name" autocomplete="off" autofocus />
+      <button id="setUsernameBtn" onclick="setUsername()">Join as</button>
+      <input id="room" placeholder="Room (e.g. general)" value="general" />
+      <button id="joinBtn" onclick="joinRoom()" disabled>Join room</button>
+    </div>
+
+    <div id="log"></div>
+
+    <div class="row">
+      <input id="msg" placeholder="Message" disabled />
+      <button id="sendBtn" onclick="sendMessage()" disabled>Send</button>
+    </div>
+  </div>
+
+  <div class="side">
+    <div class="panel">
+      <h2>Rooms</h2>
+      <ul id="rooms"><li class="system">none joined</li></ul>
+    </div>
+    <div class="panel">
+      <h2>In room</h2>
+      <ul id="users"><li class="system">-</li></ul>
+    </div>
+  </div>
+</div>
+
+<script>
+let username = "";
+let currentRoom = "";
+
+const ws = new WebSocket("ws://" + location.host + "/ws");
+
+ws.onopen = () => logLine("connected", "system");
+ws.onclose = () => logLine("disconnected", "system");
+ws.onerror = () => logLine("connection error", "system");
+
+ws.onmessage = (e) => {
+  let m;
+  try {
+    m = JSON.parse(e.data);
+  } catch {
+    logLine(e.data, "system");
+    return;
+  }
+
+  switch (m.type) {
+    case "welcome":
+      logLine(m.message, "system");
+      break;
+    case "usernameSet":
+      logLine("username set to " + m.message, "system");
+      break;
+    case "joined":
+      currentRoom = m.room;
+      logLine(m.message, "system");
+      requestRooms();
+      break;
+    case "left":
+      logLine(m.message, "system");
+      currentRoom = "";
+      document.getElementById("users").innerHTML = '<li class="system">-</li>';
+      requestRooms();
+      break;
+    case "chat":
+      logLine((m.room ? "[" + m.room + "] " : "") + m.from + ": " + m.message);
+      break;
+    case "notification":
+      logLine(m.message, "system");
+      break;
+    case "rooms":
+      renderRooms(m.rooms || []);
+      break;
+    case "users":
+      renderUsers(m.users || []);
+      break;
+    default:
+      logLine(JSON.stringify(m), "system");
+  }
+};
+
+function setUsername() {
+  const el = document.getElementById("username");
+  if (!el.value) return;
+  username = el.value;
+  ws.send(JSON.stringify({ type: "setUsername", message: username }));
+  document.getElementById("joinBtn").disabled = false;
+  document.getElementById("msg").disabled = false;
+  document.getElementById("sendBtn").disabled = false;
+}
+
+function joinRoom() {
+  const room = document.getElementById("room").value;
+  if (!room) return;
+  ws.send(JSON.stringify({ type: "join", room }));
+}
+
+function sendMessage() {
+  const el = document.getElementById("msg");
+  if (!el.value) return;
+  ws.send(JSON.stringify({ type: "chat", room: currentRoom, message: el.value }));
+  logLine((currentRoom ? "[" + currentRoom + "] " : "") + "you: " + el.value, "me");
+  el.value = "";
+}
+
+document.getElementById("msg").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") sendMessage();
+});
+
+function requestRooms() {
+  ws.send(JSON.stringify({ type: "rooms" }));
+}
+
+function renderRooms(rooms) {
+  const ul = document.getElementById("rooms");
+  ul.innerHTML = "";
+  if (rooms.length === 0) {
+    ul.innerHTML = '<li class="system">none yet</li>';
+    return;
+  }
+  for (const r of rooms) {
+    const li = document.createElement("li");
+    li.textContent = r.name + " (" + r.userCount + ")";
+    ul.appendChild(li);
+  }
+}
+
+function renderUsers(users) {
+  const ul = document.getElementById("users");
+  ul.innerHTML = "";
+  if (users.length === 0) {
+    ul.innerHTML = '<li class="system">-</li>';
+    return;
+  }
+  for (const u of users) {
+    const li = document.createElement("li");
+    li.textContent = u.username || u.id;
+    ul.appendChild(li);
+  }
+}
+
+function logLine(text, cls) {
+  const el = document.getElementById("log");
+  const div = document.createElement("div");
+  div.className = "line" + (cls ? " " + cls : "");
+  div.textContent = text;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+</script>
+</body>
+</html>
