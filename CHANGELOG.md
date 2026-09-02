@@ -5,6 +5,75 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.1] - 2026-09-02
+
+Documentation and examples only — no change to the `wshub` package API or to
+any runtime behavior, so nothing here requires action from existing callers.
+Upgrading from v1.8.0 is optional.
+
+### Added
+
+- **README "Why wshub?" and "Performance" sections**, above the feature list.
+  The first is a capability comparison against using a raw WebSocket library
+  directly, stating plainly that wshub is the infrastructure layer *around*
+  `gorilla/websocket` rather than a replacement for it. The second lifts four
+  already-measured numbers out of the Benchmarks section and gives the exact
+  command that reproduces each one, including the `LOADTEST_ARGS` scenario and
+  client count — the bare `make loadtest` default is 1,000 clients and does
+  not reproduce the 10K-connection or 5K-client figures.
+- **A recorded demo of the chat example** near the top of the README, and
+  [`examples/README.md`](examples/README.md) as an index of the example
+  programs: what each one demonstrates, how to run it, and a suggested reading
+  order. `multinode` is documented separately there, since it is its own Go
+  module, needs a running Redis, and uses fixed ports 8081/8082 rather than
+  `PORT`.
+- **`PORT` support in the `simple`, `chat`, `auth` and `metrics` examples**,
+  matching the `REDIS_ADDR` override `multinode` already had. All four
+  defaulted to `:8080`, so running any two at once failed with "address
+  already in use".
+
+### Fixed
+
+- **`examples/chat` and `examples/simple` returned 404 on `/`.** Both served
+  their page with `http.ServeFile` against a bare relative filename, and
+  neither `chat.html` nor `index.html` had ever been committed. Both pages now
+  exist and are embedded with `//go:embed`, which also removes the working
+  directory dependency: `go run ./examples/chat` from the repo root resolved
+  the filename against the caller's working directory, not the package
+  directory, so it would have 404'd even once the files existed.
+- **The example pages called `WebSocket.send` without checking the socket
+  state.** Sending before the handshake completes or after the socket closes
+  throws an uncaught `InvalidStateError`, which in a plain `onclick` handler
+  silently abandons the rest of the function — in the chat page that could
+  leave the room and message controls stuck disabled. Every send is now
+  guarded on `readyState`, and the controls are disabled again when the socket
+  closes.
+- **The chat example could broadcast hub-wide by accident.** Its message
+  controls unlocked as soon as a username was set, and sending with no room
+  joined leaves the room empty, which makes the server's handler fall back to
+  `Broadcast` instead of `BroadcastToRoom`. Messaging now unlocks only once a
+  room has actually been joined.
+- **The example pages hardcoded the `ws://` scheme**, which a browser blocks
+  as mixed content when the page itself is served over HTTPS. Both now select
+  `wss://` from `location.protocol`.
+- **The example pages had no `lang` attribute and no labels on their inputs.**
+  Both now set `lang="en"` and give every control a `<label>` associated by
+  `for`/`id`; the labels are visually hidden, so the placeholder-driven layout
+  is unchanged.
+
+### Changed
+
+- **Every example server now sets `ReadHeaderTimeout` and `ReadTimeout`.** All
+  five constructed an `http.Server` with neither, leaving them open to
+  slow-header (Slowloris) connections holding a goroutine open indefinitely —
+  the unsafe default that the directory's own review configuration
+  ([`examples/.greptile/config.json`](examples/.greptile/config.json)) says it
+  must not ship. Neither deadline applies to a connection once it has been
+  hijacked for the WebSocket, so long-lived sockets are unaffected.
+- **The chat example's page was redesigned** — centred layout, a live
+  connection-status indicator, and a spacing and depth pass. It previously
+  rendered flush against the left edge with the rest of the viewport empty.
+
 ## [1.8.0] - 2026-08-20
 
 ### Changed
@@ -419,6 +488,7 @@ v1.7.0 — they work against v1.6.1 as well.
 - Examples: simple echo server, chat with rooms, JWT auth, metrics endpoint
 - Documentation: README, QUICKSTART, SCALABILITY, CONTRIBUTING
 
+[1.8.1]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.8.1
 [1.8.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.8.0
 [1.7.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.7.0
 [1.5.0]: https://github.com/KARTIKrocks/wshub/releases/tag/v1.5.0
