@@ -10,6 +10,17 @@ type Feature = {
   readonly description: string;
 };
 
+type Capability = {
+  readonly capability: string;
+};
+
+type Stat = {
+  readonly label: string;
+  readonly value: string;
+  readonly unit: string;
+  readonly context: string;
+};
+
 const FEATURES = [
   {
     title: 'Production Ready',
@@ -68,7 +79,51 @@ const FEATURES = [
   },
 ] as const satisfies readonly Feature[];
 
+// Everything wshub provides that a raw WebSocket library leaves to you. Kept in
+// sync with the "Why wshub?" table in the repository README.
+const CAPABILITIES = [
+  { capability: 'Connection registry, rooms, broadcasting' },
+  { capability: 'Backpressure & drop policies' },
+  { capability: 'Graceful drain + shutdown' },
+  { capability: 'Multi-node scaling (Redis / NATS)' },
+  { capability: 'Rate limiting (connections, rooms, messages)' },
+  { capability: 'Metrics + official Prometheus subpackage' },
+  { capability: '/healthz and /readyz probes' },
+  { capability: 'Lifecycle hooks & middleware chain' },
+] as const satisfies readonly Capability[];
+
+// Measured on an Intel i5-11400H @ 2.70GHz (12 cores), Go 1.27, Linux. Kept in
+// sync with the Benchmarks section of the repository README.
+const STATS = [
+  {
+    label: 'SendToClient',
+    value: '105',
+    unit: 'ns/op',
+    context: '0 allocs, at 100K clients',
+  },
+  {
+    label: 'Broadcast',
+    value: '22.6',
+    unit: 'ms',
+    context: '0 allocs, to 100K clients',
+  },
+  {
+    label: 'Handshakes',
+    value: '36,891',
+    unit: 'conn/s',
+    context: 'measured over 10K connections',
+  },
+  {
+    label: 'Fanout',
+    value: '499K',
+    unit: 'msg/s',
+    context: '5K clients, one broadcaster',
+  },
+] as const satisfies readonly Stat[];
+
 const INSTALL_COMMAND = 'go get github.com/KARTIKrocks/wshub';
+
+const REPO_URL = 'https://github.com/KARTIKrocks/wshub';
 
 function Hero(): ReactNode {
   return (
@@ -121,6 +176,95 @@ function Features(): ReactNode {
   );
 }
 
+function WhyWshub(): ReactNode {
+  return (
+    <section className={styles.section}>
+      <div className="container">
+        <h2 className={styles.sectionTitle}>Why wshub?</h2>
+        <p className={styles.sectionLead}>
+          A raw <code>gorilla/websocket</code> connection gets you a socket.
+          Everything past that — the parts that turn “I can send a frame” into
+          “I can run this in production” — is what wshub provides. It is not a
+          replacement for a WebSocket protocol library; it is built on top of
+          one.
+        </p>
+
+        <div className={styles.tableScroll}>
+          <table className={styles.compare}>
+            <thead>
+              <tr>
+                <th scope="col">Capability</th>
+                <th scope="col">wshub</th>
+                <th scope="col">Raw WebSocket library</th>
+              </tr>
+            </thead>
+            <tbody>
+              {CAPABILITIES.map(({ capability }) => (
+                <tr key={capability}>
+                  <th scope="row">{capability}</th>
+                  <td>
+                    <span className={styles.check} aria-hidden="true">
+                      ✓
+                    </span>
+                    <span className={styles.srOnly}>Included</span>
+                  </td>
+                  <td className={styles.diy}>You build it</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Performance(): ReactNode {
+  return (
+    <section className={styles.section}>
+      <div className="container">
+        <h2 className={styles.sectionTitle}>Performance</h2>
+        <p className={styles.sectionLead}>
+          Measured on an Intel i5-11400H (12 cores), Go 1.27, Linux — in-process
+          benchmarks for dispatch cost, and end-to-end load tests over real
+          WebSocket connections for the rest.
+        </p>
+
+        <div className={styles.stats}>
+          {STATS.map((stat) => (
+            <article key={stat.label} className={styles.stat}>
+              <h3 className={styles.statLabel}>{stat.label}</h3>
+              <p className={styles.statValue}>
+                {stat.value}
+                <span className={styles.statUnit}> {stat.unit}</span>
+              </p>
+              <p className={styles.statContext}>{stat.context}</p>
+            </article>
+          ))}
+        </div>
+
+        <p className={styles.sectionNote}>
+          Reproduce them yourself: <code>go test -bench=. -benchmem ./...</code>{' '}
+          covers the two dispatch figures,{' '}
+          <code>
+            make loadtest LOADTEST_ARGS=&quot;-scenario connect -clients
+            10000&quot;
+          </code>{' '}
+          the handshake rate, and{' '}
+          <code>
+            make loadtest LOADTEST_ARGS=&quot;-scenario fanout -clients
+            5000&quot;
+          </code>{' '}
+          the fanout — a bare <code>make loadtest</code> defaults to 1,000
+          clients and reproduces neither. The{' '}
+          <Link to={`${REPO_URL}#benchmarks`}>full benchmark tables</Link> list
+          every figure measured.
+        </p>
+      </div>
+    </section>
+  );
+}
+
 export default function Home(): ReactNode {
   const { siteConfig } = useDocusaurusContext();
 
@@ -131,6 +275,8 @@ export default function Home(): ReactNode {
       <Hero />
       <main>
         <Features />
+        <WhyWshub />
+        <Performance />
       </main>
     </Layout>
   );
