@@ -244,11 +244,21 @@ function Performance(): ReactNode {
         </div>
 
         <p className={styles.sectionNote}>
-          Reproduce them yourself with{' '}
-          <code>go test -bench=. -benchmem ./...</code> and{' '}
-          <code>make loadtest</code> — the{' '}
+          Reproduce them yourself: <code>go test -bench=. -benchmem ./...</code>{' '}
+          covers the two dispatch figures,{' '}
+          <code>
+            make loadtest LOADTEST_ARGS=&quot;-scenario connect -clients
+            10000&quot;
+          </code>{' '}
+          the handshake rate, and{' '}
+          <code>
+            make loadtest LOADTEST_ARGS=&quot;-scenario fanout -clients
+            5000&quot;
+          </code>{' '}
+          the fanout — a bare <code>make loadtest</code> defaults to 1,000
+          clients and reproduces neither. The{' '}
           <Link to={`${REPO_URL}#benchmarks`}>full benchmark tables</Link> list
-          every figure and the exact flags behind it.
+          every figure measured.
         </p>
       </div>
     </section>
