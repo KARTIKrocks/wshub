@@ -29,6 +29,44 @@
   <b><a href="CHANGELOG.md">Changelog</a></b>
 </p>
 
+## Why wshub?
+
+A raw `gorilla/websocket` (or `nhooyr.io/websocket`) connection gets you a
+socket. Everything past that — the parts that turn "I can send a frame" into
+"I can run this in production" — is what wshub provides:
+
+| Capability | wshub | Raw WebSocket library |
+| - | - | - |
+| Connection registry, rooms, broadcasting | ✓ | You build it |
+| Backpressure & drop policies | ✓ | You build it |
+| Graceful drain + shutdown | ✓ | You build it |
+| Multi-node scaling (Redis / NATS) | ✓ | You build it |
+| Rate limiting (conns, rooms, messages) | ✓ | You build it |
+| Metrics + official Prometheus subpackage | ✓ | You build it |
+| `/healthz` / `/readyz` probes | ✓ | You build it |
+| Lifecycle hooks & middleware chain | ✓ | You build it |
+
+wshub isn't a replacement for a WebSocket protocol library — it's built on
+top of `gorilla/websocket`. It's the infrastructure layer around the socket
+that most realtime services end up writing themselves, packaged once,
+benchmarked, and kept production-safe by default.
+
+## Performance
+
+```text
+SendToClient       105 ns/op    0 allocs   (100K clients)
+Broadcast            22.6 ms    0 allocs   (100K clients)
+Handshake rate     36,891 conn/s            (10K connections)
+Fanout             ~499K msg/s              (5K clients, single broadcaster)
+```
+
+`SendToClient` and `Broadcast` are in-process benchmarks: reproduce with
+`go test -bench=. -benchmem ./...`. Handshake rate and fanout are end-to-end
+load tests: reproduce with
+`make loadtest LOADTEST_ARGS="-scenario connect -clients 10000"` and
+`make loadtest LOADTEST_ARGS="-scenario fanout -clients 5000"` respectively —
+full methodology and numbers in [Benchmarks](#benchmarks) below.
+
 ## Features
 
 - **Production-Ready**: Proper concurrency, graceful shutdown & drain, error handling
