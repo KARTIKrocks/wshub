@@ -95,8 +95,14 @@ function log(t) { document.getElementById("log").textContent += t + "\n"; }
 	})
 
 	// ReadHeaderTimeout guards against slow-header (Slowloris) connections
-	// holding a goroutine open indefinitely.
-	server := &http.Server{Addr: addr, ReadHeaderTimeout: 5 * time.Second}
+	// holding a goroutine open indefinitely; ReadTimeout bounds the whole
+	// request read. Neither applies once a connection is hijacked for the
+	// WebSocket, so long-lived sockets are unaffected.
+	server := &http.Server{
+		Addr:              addr,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       5 * time.Second,
+	}
 	go func() {
 		log.Printf("Metrics example running on %s", addr)
 		log.Println("  /ws      - WebSocket endpoint")

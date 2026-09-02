@@ -14,6 +14,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -27,6 +28,14 @@ import (
 
 	wshub "github.com/KARTIKrocks/wshub"
 )
+
+// chatHTML is embedded rather than served from disk with http.ServeFile:
+// go run resolves relative paths against the caller's working directory, not
+// the package directory, so "go run ./examples/chat" from the repo root
+// would 404 against a bare "chat.html".
+//
+//go:embed chat.html
+var chatHTML []byte
 
 // Message types
 const (
@@ -372,12 +381,20 @@ func main() {
 	// Set up HTTP routes
 	http.HandleFunc("/ws", chatServer.HandleHTTP())
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "chat.html")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(chatHTML)
 	})
 
 	// Start HTTP server. ReadHeaderTimeout guards against slow-header
-	// (Slowloris) connections holding a goroutine open indefinitely.
-	server := &http.Server{Addr: addr, ReadHeaderTimeout: 5 * time.Second}
+	// (Slowloris) connections holding a goroutine open indefinitely;
+	// ReadTimeout bounds the whole request read. Neither applies once a
+	// connection is hijacked for the WebSocket, so long-lived sockets are
+	// unaffected.
+	server := &http.Server{
+		Addr:              addr,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       5 * time.Second,
+	}
 	go func() {
 		log.Printf("Chat server starting on %s", addr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {

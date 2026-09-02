@@ -13,6 +13,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"log"
 	"net/http"
 	"os"
@@ -22,6 +23,14 @@ import (
 
 	wshub "github.com/KARTIKrocks/wshub"
 )
+
+// indexHTML is embedded rather than served from disk with http.ServeFile:
+// go run resolves relative paths against the caller's working directory, not
+// the package directory, so "go run ./examples/simple" from the repo root
+// would 404 against a bare "index.html".
+//
+//go:embed index.html
+var indexHTML []byte
 
 func main() {
 	addr := ":8080"
@@ -49,12 +58,19 @@ func main() {
 
 	// Serve static files
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "index.html")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(indexHTML)
 	})
 
 	// Start server. ReadHeaderTimeout guards against slow-header (Slowloris)
-	// connections holding a goroutine open indefinitely.
-	server := &http.Server{Addr: addr, ReadHeaderTimeout: 5 * time.Second}
+	// connections holding a goroutine open indefinitely; ReadTimeout bounds
+	// the whole request read. Neither applies once a connection is hijacked
+	// for the WebSocket, so long-lived sockets are unaffected.
+	server := &http.Server{
+		Addr:              addr,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       5 * time.Second,
+	}
 	go func() {
 		log.Printf("Server starting on %s", addr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {

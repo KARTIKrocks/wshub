@@ -16,9 +16,30 @@ once (e.g. `PORT=8081 go run ./examples/chat`).
 | [`multinode`](multinode) | Horizontal scaling across two hubs via the Redis adapter |
 
 Start with `simple`, then `chat` for the room/broadcast API surface. `auth`
-and `metrics` are focused, single-concept examples. `multinode` is the odd
-one out — it's its own Go module (it pulls in `go-redis`) and needs a local
-Redis instance; see its header comment for exact setup.
+and `metrics` are focused, single-concept examples.
+
+## Running `multinode`
+
+`multinode` is the one exception to everything above. It is its own Go module
+(it pulls in `go-redis`), it needs a running Redis, and it ignores `PORT` —
+it starts two hubs on fixed ports so you can watch a message cross between
+them:
+
+```bash
+# 1. Start Redis (any local instance works; Docker is just one option)
+docker run --rm -p 6379:6379 redis:7-alpine
+
+# 2. Run both nodes
+go run ./examples/multinode
+```
+
+Then open both nodes and send a message from either one — it arrives on both:
+
+- Node A → <http://localhost:8081>
+- Node B → <http://localhost:8082>
+
+Each node also exposes `/stats` with its local and cluster-wide client counts.
+Set `REDIS_ADDR` if Redis is not on `localhost:6379`.
 
 For the full API reference, see the
 [Documentation](https://kartikrocks.github.io/wshub/) and
