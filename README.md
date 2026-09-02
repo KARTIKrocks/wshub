@@ -29,6 +29,14 @@
   <b><a href="CHANGELOG.md">Changelog</a></b>
 </p>
 
+<p align="center">
+  <img src="examples/chat/demo.gif" alt="Two browser tabs joining a room and chatting in real time, built on wshub's rooms and broadcasting API">
+</p>
+
+<p align="center">
+  The <a href="examples/chat">room-based chat example</a> — `go run ./examples/chat`
+</p>
+
 ## Why wshub?
 
 A raw `gorilla/websocket` (or `nhooyr.io/websocket`) connection gets you a

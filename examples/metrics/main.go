@@ -3,6 +3,13 @@
 // This demonstrates implementing the MetricsCollector interface and exposing
 // metrics on a /metrics endpoint. Uses wshub's built-in DebugMetrics for
 // simplicity — in production, replace with a real Prometheus collector.
+//
+// Usage:
+//
+//	go run ./examples/metrics
+//	open http://localhost:8080
+//
+// Set PORT to run on something other than 8080.
 package main
 
 import (
@@ -19,6 +26,11 @@ import (
 )
 
 func main() {
+	addr := ":8080"
+	if p := os.Getenv("PORT"); p != "" {
+		addr = ":" + p
+	}
+
 	metrics := wshub.NewDebugMetrics()
 
 	var hub *wshub.Hub
@@ -82,9 +94,17 @@ function log(t) { document.getElementById("log").textContent += t + "\n"; }
 </body></html>`)
 	})
 
-	server := &http.Server{Addr: ":8080"}
+	// ReadHeaderTimeout guards against slow-header (Slowloris) connections
+	// holding a goroutine open indefinitely; ReadTimeout bounds the whole
+	// request read. Neither applies once a connection is hijacked for the
+	// WebSocket, so long-lived sockets are unaffected.
+	server := &http.Server{
+		Addr:              addr,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       5 * time.Second,
+	}
 	go func() {
-		log.Println("Metrics example running on :8080")
+		log.Printf("Metrics example running on %s", addr)
 		log.Println("  /ws      - WebSocket endpoint")
 		log.Println("  /metrics - Metrics endpoint")
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {

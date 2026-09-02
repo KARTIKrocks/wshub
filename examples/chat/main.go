@@ -1,7 +1,20 @@
+// Example: room-based chat server with wshub.
+//
+// This demonstrates rooms, targeted broadcasting, lifecycle hooks (join/leave
+// notifications), a middleware chain, and event-based message routing via
+// wshub.Router.
+//
+// Usage:
+//
+//	go run ./examples/chat
+//	open http://localhost:8080
+//
+// Set PORT to run on something other than 8080.
 package main
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -15,6 +28,14 @@ import (
 
 	wshub "github.com/KARTIKrocks/wshub"
 )
+
+// chatHTML is embedded rather than served from disk with http.ServeFile:
+// go run resolves relative paths against the caller's working directory, not
+// the package directory, so "go run ./examples/chat" from the repo root
+// would 404 against a bare "chat.html".
+//
+//go:embed chat.html
+var chatHTML []byte
 
 // Message types
 const (
@@ -348,6 +369,11 @@ func formatLogArgs(args []any) string {
 }
 
 func main() {
+	addr := ":8080"
+	if p := os.Getenv("PORT"); p != "" {
+		addr = ":" + p
+	}
+
 	// Create chat server
 	chatServer := NewChatServer()
 	chatServer.Start()
@@ -355,13 +381,22 @@ func main() {
 	// Set up HTTP routes
 	http.HandleFunc("/ws", chatServer.HandleHTTP())
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "chat.html")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(chatHTML)
 	})
 
-	// Start HTTP server
-	server := &http.Server{Addr: ":8080"}
+	// Start HTTP server. ReadHeaderTimeout guards against slow-header
+	// (Slowloris) connections holding a goroutine open indefinitely;
+	// ReadTimeout bounds the whole request read. Neither applies once a
+	// connection is hijacked for the WebSocket, so long-lived sockets are
+	// unaffected.
+	server := &http.Server{
+		Addr:              addr,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       5 * time.Second,
+	}
 	go func() {
-		log.Println("Chat server starting on :8080")
+		log.Printf("Chat server starting on %s", addr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal(err)
 		}

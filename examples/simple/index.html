@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>wshub - simple example</title>
+</head>
+<body>
+<h1>wshub simple example</h1>
+<p>Every message sent here is broadcast back to all connected clients.</p>
+<pre id="log"></pre>
+<label for="msg">Message</label>
+<input id="msg" placeholder="Type a message" autofocus />
+<button onclick="send()">Send</button>
+<script>
+// Match the page's scheme: a page served over HTTPS must use wss://, or the
+// browser blocks the connection as mixed content.
+const wsScheme = location.protocol === "https:" ? "wss://" : "ws://";
+const ws = new WebSocket(wsScheme + location.host + "/ws");
+ws.onopen = () => log("connected");
+ws.onmessage = (e) => log(e.data);
+ws.onclose = () => log("disconnected");
+
+function send() {
+  const input = document.getElementById("msg");
+  if (!input.value) return;
+  // Sending while the socket is still connecting (or after it closed) throws
+  // an uncaught InvalidStateError, so check readyState first.
+  if (ws.readyState !== WebSocket.OPEN) {
+    log("not connected - try again in a moment");
+    return;
+  }
+  ws.send(input.value);
+  input.value = "";
+}
+
+document.getElementById("msg").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") send();
+});
+
+function log(text) {
+  const el = document.getElementById("log");
+  el.textContent += text + "\n";
+  el.scrollTop = el.scrollHeight;
+}
+</script>
+</body>
+</html>
