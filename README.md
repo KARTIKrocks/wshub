@@ -181,8 +181,8 @@ Full guides live at **[kartikrocks.github.io/wshub](https://kartikrocks.github.i
 Exact type signatures are generated from source on
 [pkg.go.dev](https://pkg.go.dev/github.com/KARTIKrocks/wshub).
 
-Runnable programs are in [`examples/`](examples/) — simple, chat, auth, metrics,
-and multinode.
+Runnable programs are in [`examples/`](examples/) — simple, chat, auth,
+notifications, metrics, and multinode.
 
 ## Benchmarks
 

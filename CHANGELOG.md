@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **[`examples/notifications`](examples/notifications)**, a per-user server-push
+  example. The other examples are client-driven — a browser sends, the server
+  reacts — while this one runs the other way: the server decides when to push,
+  and addresses a *user* rather than a connection, so one `hub.SendToUser` call
+  reaches every tab and device that user has open. It contrasts that with
+  `client.Send` for connection-scoped messages, exposes `POST /notify` so a cron
+  job or webhook receiver can reach a signed-in user from outside the WebSocket
+  path, and `GET /online` to show the user index the hub maintains.
+
 ## [1.8.1] - 2026-09-02
 
 Documentation and examples only — no change to the `wshub` package API or to

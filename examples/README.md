@@ -12,11 +12,26 @@ once (e.g. `PORT=8081 go run ./examples/chat`).
 | [`simple`](simple) | The minimum viable server: broadcast every message back to all clients |
 | [`chat`](chat) | Rooms, targeted broadcasting, lifecycle hooks, middleware, event routing |
 | [`auth`](auth) | Authenticating connections with `BeforeConnect` / `AfterConnect` |
+| [`notifications`](notifications) | Server-pushed notifications addressed to a user with `SendToUser` |
 | [`metrics`](metrics) | Implementing `MetricsCollector` and exposing a `/metrics` endpoint |
 | [`multinode`](multinode) | Horizontal scaling across two hubs via the Redis adapter |
 
-Start with `simple`, then `chat` for the room/broadcast API surface. `auth`
-and `metrics` are focused, single-concept examples.
+Start with `simple`, then `chat` for the room/broadcast API surface. `auth`,
+`notifications`, and `metrics` are focused, single-concept examples.
+
+`notifications` is the one that runs the other direction: the server decides
+when to push, and addresses a *user* rather than a connection, so a single
+`hub.SendToUser` call reaches every tab and device that user has open. Open
+<http://localhost:8080> twice as the same user to see it, or push from outside
+the browser entirely:
+
+```bash
+curl -X POST localhost:8080/notify \
+  -d '{"user":"alice","title":"Deploy finished","body":"build #412 is live"}'
+```
+
+Omit `"user"` to announce to every connected client instead, and `GET /online`
+to see the user index the hub maintains.
 
 ## Running `multinode`
 
