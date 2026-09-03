@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wshub notifications example</title>
+<style>
+  :root {
+    --bg: #0b1220;
+    --panel: #161f32;
+    --panel-2: #1c2740;
+    --border: #2a3652;
+    --text: #e5eaf3;
+    --muted: #8b97ad;
+    --accent: #38bdf8;
+    --accent-hover: #5fcdff;
+    --good: #34d399;
+    --warn: #fbbf24;
+    --bad: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background:
+      radial-gradient(1200px 500px at 15% -10%, #14203a 0%, transparent 60%),
+      var(--bg);
+    color: var(--text);
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 24px;
+  }
+  .page { width: 100%; max-width: 780px; }
+  .header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-mark {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--accent), #6366f1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+    color: #0b1220;
+    flex-shrink: 0;
+  }
+  h1 { font-size: 16px; margin: 0; letter-spacing: -.01em; }
+  .sub { color: var(--muted); font-size: 12.5px; margin: 2px 0 0; }
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 5px 12px 5px 8px;
+    white-space: nowrap;
+  }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .status.is-open .status-dot { background: var(--good); box-shadow: 0 0 0 3px rgba(52,211,153,.15); }
+  .status.is-closed .status-dot { background: var(--bad); box-shadow: 0 0 0 3px rgba(248,113,113,.15); }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.2), 0 12px 32px -16px rgba(0,0,0,.5);
+  }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  #setup { margin-bottom: 12px; }
+  input {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 9px 12px;
+    font-size: 13px;
+    min-width: 0;
+    flex: 1;
+    transition: border-color .15s ease;
+  }
+  input::placeholder { color: var(--muted); }
+  input:focus { outline: none; border-color: var(--accent); }
+  button {
+    background: var(--accent);
+    color: #0b1220;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s ease;
+    white-space: nowrap;
+  }
+  button:hover:not(:disabled) { background: var(--accent-hover); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+  button.secondary:hover:not(:disabled) { background: #24314f; }
+  .feed-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .feed-head h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0; font-weight: 600; }
+  .count { font-size: 11px; color: var(--muted); }
+  #feed {
+    height: 320px;
+    overflow-y: auto;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .note {
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+    background: var(--panel);
+    padding: 9px 11px;
+  }
+  .note.success { border-left-color: var(--good); }
+  .note.warning { border-left-color: var(--warn); }
+  .note-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .note-title { font-size: 13px; font-weight: 600; }
+  .note-at { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .note-body { font-size: 12.5px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
+  .empty { color: var(--muted); font-size: 12.5px; font-style: italic; padding: 10px 3px; }
+  .hint {
+    margin-top: 14px;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.65;
+  }
+  .hint code {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 11.5px;
+    color: var(--text);
+  }
+  .hint p { margin: 0 0 6px; }
+  .hint p:last-child { margin-bottom: 0; }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">ws</div>
+      <div>
+        <h1>Notifications</h1>
+        <p class="sub">Server-pushed, addressed to a user — not to a connection</p>
+      </div>
+    </div>
+    <div class="status" id="status">
+      <span class="status-dot" aria-hidden="true"></span>
+      <span id="statusText">not connected</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="row" id="setup">
+      <label class="sr-only" for="user">Sign in as</label>
+      <input id="user" placeholder="Sign in as (e.g. alice)" autocomplete="off" autofocus>
+      <button id="connect" type="button">Connect</button>
+      <button id="job" class="secondary" type="button" disabled>Run a background job</button>
+    </div>
+
+    <div class="feed-head">
+      <h2>Inbox</h2>
+      <span class="count" id="count">0 notifications</span>
+    </div>
+    <div id="feed">
+      <p class="empty" id="empty">Sign in to start receiving notifications.</p>
+    </div>
+  </div>
+
+  <div class="hint">
+    <p>Open this page in a second tab as the <strong>same user</strong> — one
+      <code>hub.SendToUser</code> call reaches both.</p>
+    <p>Push from outside the browser:
+      <code id="curlHint"></code></p>
+    <p>Omit <code>"user"</code> to announce to everyone, and see who is connected at
+      <code>/online</code>.</p>
+  </div>
+</div>
+
+<script>
+const userInput = document.getElementById("user");
+const connectBtn = document.getElementById("connect");
+const jobBtn = document.getElementById("job");
+const feed = document.getElementById("feed");
+const empty = document.getElementById("empty");
+const countEl = document.getElementById("count");
+const statusEl = document.getElementById("status");
+const statusText = document.getElementById("statusText");
+
+let ws = null;
+let count = 0;
+let currentUser = null;
+
+// Built from location.host so the hint stays correct when PORT is set.
+document.getElementById("curlHint").textContent =
+  `curl -X POST ${location.host}/notify -d '{"user":"alice","title":"Deploy finished"}'`;
+
+function setStatus(state, text) {
+  statusEl.classList.toggle("is-open", state === "open");
+  statusEl.classList.toggle("is-closed", state === "closed");
+  statusText.textContent = text;
+}
+
+function connect() {
+  const user = userInput.value.trim();
+  if (!user) {
+    userInput.focus();
+    return;
+  }
+
+  if (ws) {
+    ws.close();
+    ws = null;
+  }
+
+  // The feed is per-user, so signing in as someone else must not leave the
+  // previous user's notifications on screen.
+  if (user !== currentUser) {
+    resetFeed();
+    currentUser = user;
+  }
+
+  // Match the page's scheme: a page served over HTTPS must use wss://, or the
+  // browser blocks the connection as mixed content.
+  const wsScheme = location.protocol === "https:" ? "wss://" : "ws://";
+  setStatus("connecting", "connecting…");
+
+  // Held in a local as well as in ws: these callbacks fire asynchronously, so
+  // a socket that Reconnect replaced can still emit close or error after its
+  // replacement is already open. Each handler bails out unless it is still the
+  // active socket, otherwise the dying connection reports the live one as
+  // disconnected.
+  const socket = new WebSocket(wsScheme + location.host + "/ws?user=" + encodeURIComponent(user));
+  ws = socket;
+
+  socket.onopen = () => {
+    if (socket !== ws) return;
+    setStatus("open", "connected as " + user);
+    jobBtn.disabled = false;
+    connectBtn.textContent = "Reconnect";
+  };
+
+  socket.onmessage = (e) => {
+    if (socket !== ws) return;
+    let note;
+    try {
+      note = JSON.parse(e.data);
+    } catch {
+      return;
+    }
+    render(note);
+  };
+
+  socket.onclose = () => {
+    if (socket !== ws) return;
+    setStatus("closed", "disconnected");
+    jobBtn.disabled = true;
+  };
+
+  socket.onerror = () => {
+    if (socket !== ws) return;
+    setStatus("closed", "connection failed");
+  };
+}
+
+function resetFeed() {
+  for (const el of feed.querySelectorAll(".note")) {
+    el.remove();
+  }
+  count = 0;
+  countEl.textContent = "0 notifications";
+  empty.hidden = false;
+}
+
+function render(note) {
+  empty.hidden = true;
+
+  const el = document.createElement("div");
+  el.className = "note " + (note.level || "info");
+
+  const top = document.createElement("div");
+  top.className = "note-top";
+
+  const title = document.createElement("span");
+  title.className = "note-title";
+  title.textContent = note.title || "Notification";
+
+  const at = document.createElement("span");
+  at.className = "note-at";
+  at.textContent = note.at || "";
+
+  top.append(title, at);
+  el.append(top);
+
+  if (note.body) {
+    const body = document.createElement("p");
+    body.className = "note-body";
+    body.textContent = note.body;
+    el.append(body);
+  }
+
+  // Newest first, so the latest push is always the thing you are looking at.
+  feed.prepend(el);
+
+  count += 1;
+  countEl.textContent = count + (count === 1 ? " notification" : " notifications");
+}
+
+jobBtn.addEventListener("click", () => {
+  // Sending while the socket is still connecting (or after it closed) throws
+  // an uncaught InvalidStateError, so check readyState first.
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: "startJob" }));
+});
+
+connectBtn.addEventListener("click", connect);
+userInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") connect();
+});
+</script>
+</body>
+</html>

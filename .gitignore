@@ -32,8 +32,14 @@ vendor/
 go.work
 go.work.sum
 
-# Example binaries
+# Example binaries. `go build ./examples/<name>` writes the binary to the repo
+# root, named after the directory.
 examples/multinode/multinode
+/auth
+/chat
+/metrics
+/notifications
+/simple
 
 # coverage
 coverage.*
