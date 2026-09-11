@@ -1,5 +1,5 @@
-github.com/KARTIKrocks/wshub v1.8.0 h1:+goyjKc3ABkuXvJ7jgrc8vxYTS4L+ZWtbLlZdgorOWw=
-github.com/KARTIKrocks/wshub v1.8.0/go.mod h1:v8+DaYqVVzOtO4jYPe1yAKPzg/ZmO0rkzFmXrtj8PdQ=
+github.com/KARTIKrocks/wshub v1.8.1 h1:bgfqu2VTrED+bZTHUPC1A9v4JQxsUg4xpV5qFtM0ZTM=
+github.com/KARTIKrocks/wshub v1.8.1/go.mod h1:v8+DaYqVVzOtO4jYPe1yAKPzg/ZmO0rkzFmXrtj8PdQ=
 github.com/alicebob/miniredis/v2 v2.38.0 h1:nZAzCR+Lj+Vxk4ZXzm2NuKq2O33RXj1XxJ2e2uP9jiw=
 github.com/alicebob/miniredis/v2 v2.38.0/go.mod h1:TcL7YfarKPGDAthEtl5NBeHZfeUQj6OXMm/+iu5cLMM=
 github.com/bsm/ginkgo/v2 v2.12.0 h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=
