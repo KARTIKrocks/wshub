@@ -121,7 +121,19 @@ const config: Config = {
           },
           onlyIncludeVersions: includedVersions,
         },
-        blog: false,
+        blog: {
+          blogTitle: 'wshub Blog',
+          blogDescription:
+            'Engineering notes on building production-grade WebSocket infrastructure in Go.',
+          showReadingTime: true,
+          editUrl: 'https://github.com/KARTIKrocks/wshub/tree/main/website/',
+          onInlineAuthors: 'throw',
+          onUntruncatedBlogPosts: 'throw',
+          feedOptions: {
+            type: ['rss', 'atom'],
+            xslt: true,
+          },
+        },
         theme: {
           customCss: './src/css/custom.css',
         },
@@ -157,6 +169,7 @@ const config: Config = {
           position: 'left',
           label: 'Docs',
         },
+        { to: '/blog', label: 'Blog', position: 'left' },
         {
           type: 'docsVersionDropdown',
           position: 'right',
@@ -188,6 +201,7 @@ const config: Config = {
             { label: 'Getting Started', to: '/docs/getting-started' },
             { label: 'Hub', to: '/docs/hub' },
             { label: 'Multi-Node Adapters', to: '/docs/adapters' },
+            { label: 'Blog', to: '/blog' },
           ],
         },
         {
