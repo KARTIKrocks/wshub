@@ -1,5 +1,5 @@
-github.com/KARTIKrocks/wshub v1.8.0 h1:+goyjKc3ABkuXvJ7jgrc8vxYTS4L+ZWtbLlZdgorOWw=
-github.com/KARTIKrocks/wshub v1.8.0/go.mod h1:v8+DaYqVVzOtO4jYPe1yAKPzg/ZmO0rkzFmXrtj8PdQ=
+github.com/KARTIKrocks/wshub v1.8.1 h1:bgfqu2VTrED+bZTHUPC1A9v4JQxsUg4xpV5qFtM0ZTM=
+github.com/KARTIKrocks/wshub v1.8.1/go.mod h1:v8+DaYqVVzOtO4jYPe1yAKPzg/ZmO0rkzFmXrtj8PdQ=
 github.com/antithesishq/antithesis-sdk-go v0.7.2 h1:oEEedg1Xgi8drRjqB0f9tfjhLoInE0IYZfZ6zAhQUbY=
 github.com/antithesishq/antithesis-sdk-go v0.7.2/go.mod h1:FQyySiasQQM8735Ddel3MRojmy4dA1IqCeyJ5jmPMbI=
 github.com/google/go-tpm v0.9.8 h1:slArAR9Ft+1ybZu0lBwpSmpwhRXaa85hWtMinMyRAWo=
