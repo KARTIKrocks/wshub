@@ -94,8 +94,6 @@ full methodology and numbers in [Benchmarks](#benchmarks) below.
 
 ## Installation
 
-Requires **Go 1.27+**.
-
 ```bash
 go get github.com/KARTIKrocks/wshub
 ```
