@@ -1,6 +1,4 @@
-GOLANGCI_LINT_VERSION := v2.14.0
-GOIMPORTS_VERSION := v0.51.0
-GOVULNCHECK_VERSION := v1.8.0
+include common.mk
 
 # The Markdown linter. Versioned in website/package.json rather than pinned
 # here, so Dependabot keeps it current along with the rest of the docs toolchain.
@@ -11,24 +9,9 @@ MARKDOWNLINT := website/node_modules/.bin/markdownlint-cli2
 SUBMODULES := adapter/redis adapter/nats prometheus
 EXAMPLE_MODULES := examples/multinode
 
-.PHONY: all setup deps work tidy tidy-modules tidy-check test test-v test-modules test-prometheus vet vet-modules lint lint-modules lint-docs lint-docs-fix lint-fix fix vuln vuln-modules print-govulncheck-version print-golangci-lint-version build build-examples bench fuzz fmt cover clean ci loadtest
+.PHONY: all setup deps work tidy tidy-modules tidy-check test test-v test-modules test-prometheus vet vet-modules lint lint-modules lint-docs lint-docs-fix lint-fix fix vuln vuln-modules build build-examples bench fuzz fmt cover clean ci loadtest
 
 all: fmt vet vet-modules lint lint-modules test test-modules build build-examples
-
-## Install development tools (skips if already present)
-setup:
-	@command -v golangci-lint >/dev/null 2>&1 || { \
-		echo "Installing golangci-lint $(GOLANGCI_LINT_VERSION)..."; \
-		go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION); \
-	}
-	@command -v goimports >/dev/null 2>&1 || { \
-		echo "Installing goimports $(GOIMPORTS_VERSION)..."; \
-		go install golang.org/x/tools/cmd/goimports@$(GOIMPORTS_VERSION); \
-	}
-	@command -v govulncheck >/dev/null 2>&1 || { \
-		echo "Installing govulncheck $(GOVULNCHECK_VERSION)..."; \
-		go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION); \
-	}
 
 ## Download module dependencies
 deps:
@@ -132,18 +115,6 @@ lint-modules: setup work
 ## not a false positive.
 vuln: setup
 	govulncheck ./...
-
-## Print the pinned scanner version. CI installs govulncheck with this rather
-## than hardcoding a second copy of the number, so the workflow and this file
-## cannot drift apart.
-print-govulncheck-version:
-	@echo $(GOVULNCHECK_VERSION)
-
-## Print the pinned linter version. CI resolves golangci-lint-action's version
-## input from this rather than hardcoding a second copy of the number, so the
-## workflow and this file cannot drift apart.
-print-golangci-lint-version:
-	@echo $(GOLANGCI_LINT_VERSION)
 
 ## Scan every nested module. Separate for the same reason lint-modules is: the
 ## root module's ./... stops at nested go.mod boundaries, so the adapters' own
