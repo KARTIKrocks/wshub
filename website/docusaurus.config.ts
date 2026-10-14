@@ -108,6 +108,7 @@ const config: Config = {
         docs: {
           sidebarPath: './sidebars.ts',
           editUrl: 'https://github.com/KARTIKrocks/wshub/tree/main/website/',
+          editCurrentVersion: true,
           // `current` is the working copy on main — it documents unreleased
           // changes and is served at /docs/next/. The newest snapshot in
           // versions.json is what /docs/ serves, so the default reader always

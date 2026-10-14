@@ -93,7 +93,10 @@ try {
 }
 
 const updated = JSON.parse(fs.readFileSync(versionsFile, 'utf8'));
-const dropped = updated.slice(MAX_LIVE_VERSIONS);
+const previouslyLive = new Set(existing.slice(0, MAX_LIVE_VERSIONS));
+const dropped = updated
+  .slice(MAX_LIVE_VERSIONS)
+  .filter((v) => previouslyLive.has(v));
 
 console.log(
   `\n\x1b[32mdone\x1b[0m  versions.json is now: ${updated.join(', ')}`,

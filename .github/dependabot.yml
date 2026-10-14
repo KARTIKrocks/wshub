@@ -55,10 +55,12 @@ updates:
     open-pull-requests-limit: 3
     groups:
       docusaurus:
+        update-types: ["minor", "patch"]
         patterns:
           - "@docusaurus/*"
           - "@mdx-js/*"
       website:
+        update-types: ["minor", "patch"]
         patterns:
           - "*"
 
