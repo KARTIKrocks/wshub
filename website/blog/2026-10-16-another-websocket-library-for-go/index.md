@@ -83,7 +83,7 @@ in the shape a single Go service wants — were:
   shouldn't be able to block a broadcast to everyone else, and an unbounded
   queue for that client is just a slower way to run out of memory. wshub's
   answer — bounded per-client channels plus a configurable drop policy
-  (`DropOldest`, `DropNewest`, or none) with a notification hook — is the
+  (`DropOldest` or `DropNewest`) with a notification hook — is the
   subject of [article 3](/blog/building-backpressure-into-a-go-websocket-server).
 - **A graceful shutdown that actually waits.** "Close every connection" is
   one line. Draining in-flight sends, handling a client that's open but
@@ -96,8 +96,9 @@ in the shape a single Go service wants — were:
   message. [Article 4](/blog/scaling-websockets-across-multiple-go-servers-with-redis)
   covers the adapter pattern wshub uses for this (Redis and NATS, pluggable,
   with node-ID dedup built in) — the part that a single-process library like
-  melody has no story for at all, and that centrifuge solves by making you
-  adopt its whole server instead.
+  melody has no story for at all, and that Centrifugo solves by giving you a
+  clustered server with its own Redis-backed engine, rather than an adapter
+  you plug into a service you already run.
 - **Honest numbers for the question everyone asks first.**
   [Article 2](/blog/handling-10000-websocket-connections-in-go) measures
   what 10,000 open connections and a sustained broadcast actually cost, in
