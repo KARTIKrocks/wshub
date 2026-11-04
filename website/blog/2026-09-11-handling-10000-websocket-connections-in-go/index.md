@@ -50,7 +50,7 @@ The real questions are narrower:
 
 1. How much memory does each connection actually cost, end to end?
 2. What OS-level limits sit between your process and 10,000 open sockets?
-3. At what point does something *other* than connection count become the
+3. At what point does something _other_ than connection count become the
    bottleneck?
 
 ## The actual memory budget
@@ -70,7 +70,7 @@ Per connection, that's:
 - Two `gorilla/websocket` I/O buffers, 1 KB each by default
   (`ReadBufferSize`/`WriteBufferSize` in wshub's `Config`).
 - A buffered send channel, `SendChannelSize` slots deep (default 256) — note
-  this holds `[]byte` *references*, not preallocated byte arrays, so it costs
+  this holds `[]byte` _references_, not preallocated byte arrays, so it costs
   roughly 256 × 24 bytes of slice headers when full, not 256 KB.
 - Bookkeeping: a map entry in the hub's client registry, connection metadata,
   and whatever callbacks are registered.
@@ -89,7 +89,7 @@ memory sampled via `runtime.MemStats` and divided by connection count):
 Two things worth noticing. First, per-connection memory is flat across an
 order of magnitude of scale (~25–27 KB) — there's no hidden O(n) cost
 lurking in the client registry or the broadcast path that shows up only at
-higher connection counts. Second, handshake *throughput* actually improves
+higher connection counts. Second, handshake _throughput_ actually improves
 with scale (15.7K → 36.9K conn/s), which is a load-test-harness artifact, not
 a server property: connecting more clients amortizes fixed startup costs
 (goroutine scheduling ramp-up, initial GC assist) over more connections. At
@@ -117,7 +117,7 @@ connections to Redis/NATS if you're using an adapter, and health-check
 sockets.
 
 **2. Listen backlog (`net.core.somaxconn`).** This one only bites during a
-*connection burst*, not at steady state. The kernel queues completed
+_connection burst_, not at steady state. The kernel queues completed
 TCP handshakes for `accept()` in a backlog whose size is capped by
 `net.core.somaxconn` (historically 128 on older kernels, higher on modern
 defaults); Go's `net.Listen` requests a backlog but the kernel silently caps
@@ -128,7 +128,7 @@ burst, the kernel starts dropping or refusing the excess before your accept
 loop ever sees them. This is exactly why wshub's own load-test client caps
 itself to 200 concurrent in-flight handshakes with a semaphore: not because
 the server can't take more, but because an unbounded connect burst measures
-the *test harness's* backlog behavior instead of the server's. In
+the _test harness's_ backlog behavior instead of the server's. In
 production, size `somaxconn` to your worst realistic reconnect-storm burst,
 not your steady-state connection count.
 
@@ -136,9 +136,9 @@ not your steady-state connection count.
 where a lot of write-ups get it backwards. A listening server doesn't
 consume an ephemeral port per accepted connection — every inbound connection
 shares the same server-side `(IP, port)` pair; what makes each connection
-unique is the *client's* IP and port. The ephemeral port range
+unique is the _client's_ IP and port. The ephemeral port range
 (`net.ipv4.ip_local_port_range` on Linux, roughly 28,000–60,000 ports by
-default) only matters for the side *initiating* outbound connections: a
+default) only matters for the side _initiating_ outbound connections: a
 load-generator opening 10,000 client sockets from one machine, or your
 server's own outbound connections to a Redis/NATS adapter. If you're only
 accepting inbound WebSocket connections, this limit is irrelevant to your
@@ -147,13 +147,13 @@ a different topology.
 
 **4. `GOMAXPROCS` and the scheduler, not connection count.** wshub's load
 test header prints `12 cores` on the machine these numbers came from — this
-matters for *dispatch* work, not for holding connections open. A goroutine
+matters for _dispatch_ work, not for holding connections open. A goroutine
 parked on a socket read costs no CPU; a goroutine actively processing a
 message does. The next section is where this actually shows up.
 
 ## Where 10,000 stops being "just a number"
 
-Holding 10,000 idle connections open is close to free. *Doing something*
+Holding 10,000 idle connections open is close to free. _Doing something_
 with all of them concurrently is a different problem, and it's where wshub's
 own benchmarks show a real cliff — not in connection count, but in
 sustained fanout:
@@ -168,7 +168,7 @@ Throughput keeps climbing, but p50 latency jumps almost three orders of
 magnitude between 5,000 and 10,000 clients under sustained broadcast load
 (100 msg/s from a single broadcaster, 10-second window). The documented
 explanation is scheduler pressure: every broadcast at this scale is pushing
-into thousands of buffered channels, and *reading* off each of those
+into thousands of buffered channels, and _reading_ off each of those
 channels and writing to each socket is real, concurrently-scheduled CPU and
 syscall work — competing for the same `GOMAXPROCS`-bound thread pool that
 every other goroutine in the process shares, including the read side of the
@@ -195,7 +195,7 @@ three knobs for this, in the order I'd reach for them:
   its own set of correctness problems (node-ID deduplication, not blocking
   local delivery on the bus) — enough for the next article in this series.
 
-One knob that's *not* on this list: `WithParallelBroadcast`. It exists for
+One knob that's _not_ on this list: `WithParallelBroadcast`. It exists for
 backward compatibility, but wshub's own load tests found it consistently
 slower than the default serial broadcast in practice — the per-call
 lock/defer overhead of parallel dispatch doesn't pay for itself against real

@@ -23,14 +23,14 @@ import "github.com/KARTIKrocks/wshub"
 
 ## Message Type
 
-| Field / Method | Description |
-| --- | --- |
-| `Type` | `MessageType` (`TextMessage` or `BinaryMessage`) |
-| `Data` | Raw message data as `[]byte` |
-| `ClientID` | Sender's client ID |
-| `Time` | Receive timestamp |
-| `Text()` | Data as a string |
-| `JSON(v)` | Unmarshal data as JSON into `v` |
+| Field / Method | Description                                      |
+| -------------- | ------------------------------------------------ |
+| `Type`         | `MessageType` (`TextMessage` or `BinaryMessage`) |
+| `Data`         | Raw message data as `[]byte`                     |
+| `ClientID`     | Sender's client ID                               |
+| `Time`         | Receive timestamp                                |
+| `Text()`       | Data as a string                                 |
+| `JSON(v)`      | Unmarshal data as JSON into `v`                  |
 
 ```go
 type Message struct {
@@ -88,11 +88,11 @@ When you marshal JSON once and fan it out to many clients, use the raw JSON API
 to skip re-serialization entirely. This is ideal for high-throughput broadcast
 patterns where the same payload goes to hundreds or thousands of connections.
 
-| Function / Method | Description |
-| --- | --- |
-| `NewRawJSONMessage(data)` | Create a message from already-marshaled JSON bytes |
-| `Hub.BroadcastRawJSON(data)` | Broadcast pre-serialized JSON to all clients |
-| `Client.SendRawJSON(data)` | Send pre-serialized JSON to a single client |
+| Function / Method            | Description                                        |
+| ---------------------------- | -------------------------------------------------- |
+| `NewRawJSONMessage(data)`    | Create a message from already-marshaled JSON bytes |
+| `Hub.BroadcastRawJSON(data)` | Broadcast pre-serialized JSON to all clients       |
+| `Client.SendRawJSON(data)`   | Send pre-serialized JSON to a single client        |
 
 ```go
 // Marshal once, broadcast to all — 0 allocs per send (~35 ns vs ~1,000 ns)

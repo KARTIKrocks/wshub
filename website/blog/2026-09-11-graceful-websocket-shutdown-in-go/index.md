@@ -3,7 +3,7 @@ slug: graceful-websocket-shutdown-in-go
 title: Graceful WebSocket Shutdown in Go
 authors: [kartik]
 tags: [go, websocket, concurrency, reliability]
-description: "\"Wait for every connection to close on its own\" sounds graceful and isn't — a client that's connected but silent can block it forever. The actual implementation needs a state machine, an idle reaper, and a shutdown path that unblocks it."
+description: '"Wait for every connection to close on its own" sounds graceful and isn''t — a client that''s connected but silent can block it forever. The actual implementation needs a state machine, an idle reaper, and a shutdown path that unblocks it.'
 ---
 
 # Graceful WebSocket Shutdown in Go
@@ -113,7 +113,7 @@ for _, client := range snap.slice {
 }
 ```
 
-Precision matters here: this measures the *send* buffer being continuously
+Precision matters here: this measures the _send_ buffer being continuously
 empty — "the server has had nothing left to tell this client for the full
 drain timeout" — not literally whether the client is responsive. That's a
 deliberate, narrower signal than "is this client still alive," and it's the
@@ -161,7 +161,7 @@ Redis adapter closes its subscription: a small watcher goroutine per client
 does nothing but wait on `ctx.Done()` and then call `closeConn()`, which is
 what actually unblocks the `readPump`'s blocking `ReadMessage()` call. It's
 the same shape — a goroutine whose only job is to close something from
-*outside* the blocking loop that's holding it — showing up twice in the
+_outside_ the blocking loop that's holding it — showing up twice in the
 same codebase because it's the correct answer to the same underlying
 problem: you can't make a blocking call return early from inside itself, so
 something else has to close the resource it's blocked on.

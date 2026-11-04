@@ -80,29 +80,29 @@ Import as a separate module:
 go get github.com/KARTIKrocks/wshub/prometheus
 ```
 
-| Option | Description |
-| --- | --- |
-| `WithRegistry(reg)` | Use a custom Prometheus registry (default: `prometheus.DefaultRegisterer`) |
-| `WithNamespace(ns)` | Set the metric name prefix (default: `wshub`) |
-| `WithLatencyBuckets(buckets)` | Custom histogram buckets for `message_latency_seconds` |
-| `WithBroadcastBuckets(buckets)` | Custom histogram buckets for `broadcast_duration_seconds` |
+| Option                          | Description                                                                |
+| ------------------------------- | -------------------------------------------------------------------------- |
+| `WithRegistry(reg)`             | Use a custom Prometheus registry (default: `prometheus.DefaultRegisterer`) |
+| `WithNamespace(ns)`             | Set the metric name prefix (default: `wshub`)                              |
+| `WithLatencyBuckets(buckets)`   | Custom histogram buckets for `message_latency_seconds`                     |
+| `WithBroadcastBuckets(buckets)` | Custom histogram buckets for `broadcast_duration_seconds`                  |
 
 Exposed metrics:
 
-| Metric | Description |
-| --- | --- |
-| `connections_active` | Gauge of currently connected clients |
-| `connections_total` | Counter of all connections ever accepted |
-| `messages_received_total` | Counter of inbound messages |
-| `messages_sent_total` | Counter of outbound messages |
-| `messages_dropped_total` | Counter of messages dropped due to full send buffers |
-| `message_received_bytes_total` | Counter of inbound bytes |
-| `message_latency_seconds` | Histogram of message handler latency |
-| `broadcast_duration_seconds` | Histogram of local fanout duration |
-| `rooms_active` | Gauge of currently active rooms |
-| `room_joins_total` | Counter of room join events |
-| `room_leaves_total` | Counter of room leave events |
-| `errors_total` | Counter of errors, labelled by `type` |
+| Metric                         | Description                                          |
+| ------------------------------ | ---------------------------------------------------- |
+| `connections_active`           | Gauge of currently connected clients                 |
+| `connections_total`            | Counter of all connections ever accepted             |
+| `messages_received_total`      | Counter of inbound messages                          |
+| `messages_sent_total`          | Counter of outbound messages                         |
+| `messages_dropped_total`       | Counter of messages dropped due to full send buffers |
+| `message_received_bytes_total` | Counter of inbound bytes                             |
+| `message_latency_seconds`      | Histogram of message handler latency                 |
+| `broadcast_duration_seconds`   | Histogram of local fanout duration                   |
+| `rooms_active`                 | Gauge of currently active rooms                      |
+| `room_joins_total`             | Counter of room join events                          |
+| `room_leaves_total`            | Counter of room leave events                         |
+| `errors_total`                 | Counter of errors, labelled by `type`                |
 
 ```go
 import whprom "github.com/KARTIKrocks/wshub/prometheus"

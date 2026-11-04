@@ -41,11 +41,11 @@ hub := wshub.NewHub(
 
 ## Built-in Middleware
 
-| Middleware | Description |
-| --- | --- |
-| `LoggingMiddleware(logger)` | Log message events |
+| Middleware                   | Description                             |
+| ---------------------------- | --------------------------------------- |
+| `LoggingMiddleware(logger)`  | Log message events                      |
 | `RecoveryMiddleware(logger)` | Recover from panics in message handlers |
-| `MetricsMiddleware(metrics)` | Record message processing metrics |
+| `MetricsMiddleware(metrics)` | Record message processing metrics       |
 
 ```go
 // Use built-in middleware

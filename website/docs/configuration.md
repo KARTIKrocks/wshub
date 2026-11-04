@@ -25,18 +25,18 @@ import "github.com/KARTIKrocks/wshub"
 
 ## Default Config
 
-| Option | Default |
-| --- | --- |
-| `ReadBufferSize` | 1024 |
-| `WriteBufferSize` | 1024 |
-| `WriteWait` | 10s |
-| `PongWait` | 60s |
-| `PingPeriod` | 54s (90% of `PongWait`) |
-| `MaxMessageSize` | 512 KB |
-| `SendChannelSize` | 256 |
-| `EnableCompression` | false |
-| `CoalesceWrites` | false |
-| `CheckOrigin` | `AllowSameOrigin` |
+| Option              | Default                 |
+| ------------------- | ----------------------- |
+| `ReadBufferSize`    | 1024                    |
+| `WriteBufferSize`   | 1024                    |
+| `WriteWait`         | 10s                     |
+| `PongWait`          | 60s                     |
+| `PingPeriod`        | 54s (90% of `PongWait`) |
+| `MaxMessageSize`    | 512 KB                  |
+| `SendChannelSize`   | 256                     |
+| `EnableCompression` | false                   |
+| `CoalesceWrites`    | false                   |
+| `CheckOrigin`       | `AllowSameOrigin`       |
 
 ```go
 // Use default config
@@ -50,13 +50,13 @@ hub := wshub.NewHub(
 
 ## Builder Methods
 
-| Method | Description |
-| --- | --- |
-| `WithBufferSizes(read, write)` | Set read and write buffer sizes |
-| `WithMaxMessageSize(size)` | Set maximum message size in bytes |
-| `WithCompression(enabled)` | Enable per-message compression |
-| `WithCoalesceWrites(enabled)` | Batch queued text messages into a single WebSocket frame (newline-separated), reducing syscalls under high throughput |
-| `WithCheckOrigin(fn)` | Set the origin validation function |
+| Method                         | Description                                                                                                           |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `WithBufferSizes(read, write)` | Set read and write buffer sizes                                                                                       |
+| `WithMaxMessageSize(size)`     | Set maximum message size in bytes                                                                                     |
+| `WithCompression(enabled)`     | Enable per-message compression                                                                                        |
+| `WithCoalesceWrites(enabled)`  | Batch queued text messages into a single WebSocket frame (newline-separated), reducing syscalls under high throughput |
+| `WithCheckOrigin(fn)`          | Set the origin validation function                                                                                    |
 
 ```go
 config := wshub.DefaultConfig().
@@ -81,10 +81,10 @@ If your front-end is served from a different origin than the WebSocket
 endpoint, allowlist it with `AllowOrigins` — otherwise those upgrades are
 rejected with `403` and an `origin_rejected` metric.
 
-| Function | Description |
-| --- | --- |
-| `AllowAllOrigins` | Allow connections from any origin — development only |
-| `AllowSameOrigin` | Only allow same-origin connections (the default) |
+| Function                   | Description                                             |
+| -------------------------- | ------------------------------------------------------- |
+| `AllowAllOrigins`          | Allow connections from any origin — development only    |
+| `AllowSameOrigin`          | Only allow same-origin connections (the default)        |
 | `AllowOrigins(origins...)` | Allow specific origins, compared as full origin strings |
 
 ```go

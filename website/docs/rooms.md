@@ -24,11 +24,11 @@ import "github.com/KARTIKrocks/wshub"
 
 ## Joining and Leaving
 
-| Method | Description |
-| --- | --- |
-| `hub.JoinRoom(client, room)` | Add a client to a room |
-| `hub.LeaveRoom(client, room)` | Remove a client from a room |
-| `hub.LeaveAllRooms(client)` | Remove a client from all rooms |
+| Method                        | Description                    |
+| ----------------------------- | ------------------------------ |
+| `hub.JoinRoom(client, room)`  | Add a client to a room         |
+| `hub.LeaveRoom(client, room)` | Remove a client from a room    |
+| `hub.LeaveAllRooms(client)`   | Remove a client from all rooms |
 
 ```go
 // Join a room (created lazily if it doesn't exist)
@@ -44,13 +44,13 @@ hub.LeaveAllRooms(client)
 
 ## Room Broadcasting
 
-| Method | Description |
-| --- | --- |
-| `BroadcastToRoom(room, data)` | Send text to all clients in a room |
-| `BroadcastBinaryToRoom(room, data)` | Send binary to all clients in a room |
-| `BroadcastToRoomWithContext(ctx, room, data)` | Send to a room with context (blocks until enqueued) |
-| `BroadcastToRoomExcept(room, data, except...)` | Send text to a room except specific clients |
-| `BroadcastBinaryToRoomExcept(room, data, except...)` | Send binary to a room except specific clients |
+| Method                                               | Description                                         |
+| ---------------------------------------------------- | --------------------------------------------------- |
+| `BroadcastToRoom(room, data)`                        | Send text to all clients in a room                  |
+| `BroadcastBinaryToRoom(room, data)`                  | Send binary to all clients in a room                |
+| `BroadcastToRoomWithContext(ctx, room, data)`        | Send to a room with context (blocks until enqueued) |
+| `BroadcastToRoomExcept(room, data, except...)`       | Send text to a room except specific clients         |
+| `BroadcastBinaryToRoomExcept(room, data, except...)` | Send binary to a room except specific clients       |
 
 ```go
 // Broadcast to everyone in a room
@@ -62,16 +62,16 @@ hub.BroadcastToRoomExcept("chat-general", []byte(msg), sender)
 
 ## Querying Rooms
 
-| Method | Description |
-| --- | --- |
-| `hub.RoomClients(room)` | Get all clients in a room |
-| `hub.RoomCount(room)` | Count clients in a room (local node) |
+| Method                      | Description                                                                   |
+| --------------------------- | ----------------------------------------------------------------------------- |
+| `hub.RoomClients(room)`     | Get all clients in a room                                                     |
+| `hub.RoomCount(room)`       | Count clients in a room (local node)                                          |
 | `hub.GlobalRoomCount(room)` | Count clients in a room across all nodes (requires [presence](./presence.md)) |
-| `hub.RoomNames()` | Get all room names |
-| `hub.RoomExists(room)` | Check whether a room exists |
-| `client.Rooms()` | List the client's rooms |
-| `client.InRoom(name)` | Check whether the client is in a room |
-| `client.RoomCount()` | Number of rooms the client is in |
+| `hub.RoomNames()`           | Get all room names                                                            |
+| `hub.RoomExists(room)`      | Check whether a room exists                                                   |
+| `client.Rooms()`            | List the client's rooms                                                       |
+| `client.InRoom(name)`       | Check whether the client is in a room                                         |
+| `client.RoomCount()`        | Number of rooms the client is in                                              |
 
 ```go
 // Hub-level room queries
