@@ -25,15 +25,15 @@ import "github.com/KARTIKrocks/wshub"
 
 ## Properties
 
-| Property / Method | Description |
-| --- | --- |
-| `client.ID` | Unique client identifier (UUID) |
+| Property / Method   | Description                          |
+| ------------------- | ------------------------------------ |
+| `client.ID`         | Unique client identifier (UUID)      |
 | `SetUserID(userID)` | Set user ID for multi-device support |
-| `GetUserID()` | Get the assigned user ID |
-| `ConnectedAt()` | Connection timestamp |
-| `IsClosed()` | Whether the connection is closed |
-| `ClosedAt()` | When the connection was closed |
-| `Request()` | Access the original HTTP request |
+| `GetUserID()`       | Get the assigned user ID             |
+| `ConnectedAt()`     | Connection timestamp                 |
+| `IsClosed()`        | Whether the connection is closed     |
+| `ClosedAt()`        | When the connection was closed       |
+| `Request()`         | Access the original HTTP request     |
 
 ```go
 // Access client properties
@@ -51,16 +51,16 @@ token := req.Header.Get("Authorization")
 
 ## Sending Messages
 
-| Method | Description |
-| --- | --- |
-| `Send(data)` | Send raw bytes |
-| `SendText(text)` | Send a text string |
-| `SendJSON(v)` | JSON-encode and send |
-| `SendRawJSON(data)` | Send pre-serialized JSON bytes (0 allocs, skips marshaling) |
-| `SendBinary(data)` | Send a binary message |
-| `SendMessage(msgType, data)` | Send with a specific message type (applies drop policy) |
-| `SendWithContext(ctx, data)` | Send text with context support (blocks until enqueued) |
-| `SendMessageWithContext(ctx, msgType, data)` | Send with type and context (blocks until enqueued) |
+| Method                                       | Description                                                 |
+| -------------------------------------------- | ----------------------------------------------------------- |
+| `Send(data)`                                 | Send raw bytes                                              |
+| `SendText(text)`                             | Send a text string                                          |
+| `SendJSON(v)`                                | JSON-encode and send                                        |
+| `SendRawJSON(data)`                          | Send pre-serialized JSON bytes (0 allocs, skips marshaling) |
+| `SendBinary(data)`                           | Send a binary message                                       |
+| `SendMessage(msgType, data)`                 | Send with a specific message type (applies drop policy)     |
+| `SendWithContext(ctx, data)`                 | Send text with context support (blocks until enqueued)      |
+| `SendMessageWithContext(ctx, msgType, data)` | Send with type and context (blocks until enqueued)          |
 
 ```go
 // Send different message types

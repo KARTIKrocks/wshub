@@ -11,7 +11,7 @@ description: A stateless HTTP API scales by adding replicas behind a load balanc
 A stateless HTTP handler scales the boring way: put a load balancer in
 front, add replicas, done — any instance can answer any request because no
 instance holds anything the others need. A WebSocket server breaks that
-model by definition. The connection *is* the state. If Alice is connected to
+model by definition. The connection _is_ the state. If Alice is connected to
 node B and your billing webhook fires on node A and calls
 `hub.SendToUser("alice", ...)`, node A's hub has no idea Alice exists. The
 message doesn't error, doesn't queue, doesn't retry — it just isn't
@@ -47,7 +47,7 @@ Small enough that Redis Pub/Sub, NATS, or a hand-rolled bus are all
 one afternoon's implementation — the interface makes no assumption about
 delivery guarantees, ordering, or persistence beyond "fire this at every
 other node." That minimalism is deliberate: the correctness rules below live
-in *how the hub uses* this interface, not in the interface itself, so any
+in _how the hub uses_ this interface, not in the interface itself, so any
 transport that satisfies these three methods inherits them for free.
 
 ## Rule 1: local delivery never waits on the bus
@@ -83,7 +83,7 @@ func (h *Hub) publishToAdapter(msg AdapterMessage) {
 ```
 
 This ordering is the whole point. If Redis is down, degraded, or just slow,
-every node's *local* clients keep working normally — they simply stop
+every node's _local_ clients keep working normally — they simply stop
 receiving updates that originated on other nodes, which is a partial,
 recoverable degradation instead of every WebSocket connection in the fleet
 going down because the message bus had a bad five minutes. A message bus
@@ -93,7 +93,7 @@ from it.
 ## Rule 2: every node has to ignore its own echo
 
 Here's the bug you'd write without thinking about it twice: Node A
-broadcasts. Node A delivers locally *and* publishes to Redis. Every node
+broadcasts. Node A delivers locally _and_ publishes to Redis. Every node
 subscribed to that Redis channel — including Node A itself — receives the
 message back. Without a check, Node A now delivers the same broadcast to
 its own clients twice.
@@ -110,7 +110,7 @@ func (h *Hub) handleAdapterMessage(msg AdapterMessage) {
 }
 ```
 
-`msg.NodeID` is stamped by the *publishing* node in `publishToAdapter`
+`msg.NodeID` is stamped by the _publishing_ node in `publishToAdapter`
 above, not read back from the transport — Redis Pub/Sub doesn't tell you who
 published a message, so the dedup key has to travel inside the payload. The
 second half of that comment — "never re-publish" — matters just as much as
@@ -168,7 +168,7 @@ a.mu.Unlock()
 // ... (goroutines started here, after the lock is released)
 ```
 
-`wg.Add(2)` happens *before* the lock is released and before either
+`wg.Add(2)` happens _before_ the lock is released and before either
 goroutine actually starts — not after. Go's own `sync.WaitGroup`
 documentation calls this out directly: calls to `Add` that increment the
 counter from zero must happen before a `Wait` that could observe it. If
@@ -233,5 +233,5 @@ The [Adapters guide](https://kartikrocks.github.io/wshub/docs/adapters)
 covers the full interface and the NATS adapter for anyone not already
 running Redis; the [Presence guide](https://kartikrocks.github.io/wshub/docs/presence)
 covers the gossip mechanism in more depth. Next in this series: what it
-takes to take one of these nodes *out* of the cluster without dropping a
+takes to take one of these nodes _out_ of the cluster without dropping a
 single in-flight connection.

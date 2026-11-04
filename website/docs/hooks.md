@@ -26,14 +26,14 @@ import "github.com/KARTIKrocks/wshub"
 
 ## Connection Hooks
 
-| Hook | Description |
-| --- | --- |
-| `BeforeConnect(r *http.Request) error` | Called before upgrading — return an error to reject |
-| `AfterConnect(client *Client)` | Called after a client connects |
-| `BeforeDisconnect(client *Client)` | Called before disconnect (runs with a timeout, default 5s via `WithHookTimeout`) |
-| `AfterDisconnect(client *Client)` | Called after a client disconnects |
-| `OnError(client *Client, err error)` | Called on client errors |
-| `OnSendDropped(client *Client, data []byte)` | Called when a message is dropped due to a full send buffer |
+| Hook                                         | Description                                                                      |
+| -------------------------------------------- | -------------------------------------------------------------------------------- |
+| `BeforeConnect(r *http.Request) error`       | Called before upgrading — return an error to reject                              |
+| `AfterConnect(client *Client)`               | Called after a client connects                                                   |
+| `BeforeDisconnect(client *Client)`           | Called before disconnect (runs with a timeout, default 5s via `WithHookTimeout`) |
+| `AfterDisconnect(client *Client)`            | Called after a client disconnects                                                |
+| `OnError(client *Client, err error)`         | Called on client errors                                                          |
+| `OnSendDropped(client *Client, data []byte)` | Called when a message is dropped due to a full send buffer                       |
 
 ```go
 hub := wshub.NewHub(
@@ -71,10 +71,10 @@ hub := wshub.NewHub(
 
 ## Message Hooks
 
-| Hook | Description |
-| --- | --- |
+| Hook                                           | Description                                                 |
+| ---------------------------------------------- | ----------------------------------------------------------- |
 | `BeforeMessage(client, msg) (*Message, error)` | Called before processing — can modify or reject the message |
-| `AfterMessage(client, msg, err)` | Called after message processing completes |
+| `AfterMessage(client, msg, err)`               | Called after message processing completes                   |
 
 ```go
 wshub.WithHooks(wshub.Hooks{
@@ -96,12 +96,12 @@ wshub.WithHooks(wshub.Hooks{
 
 ## Room Hooks
 
-| Hook | Description |
-| --- | --- |
+| Hook                                 | Description                                       |
+| ------------------------------------ | ------------------------------------------------- |
 | `BeforeRoomJoin(client, room) error` | Called before joining — return an error to reject |
-| `AfterRoomJoin(client, room)` | Called after joining a room |
-| `BeforeRoomLeave(client, room)` | Called before leaving a room |
-| `AfterRoomLeave(client, room)` | Called after leaving a room |
+| `AfterRoomJoin(client, room)`        | Called after joining a room                       |
+| `BeforeRoomLeave(client, room)`      | Called before leaving a room                      |
+| `AfterRoomLeave(client, room)`       | Called after leaving a room                       |
 
 ```go
 wshub.WithHooks(wshub.Hooks{

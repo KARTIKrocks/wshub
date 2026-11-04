@@ -41,9 +41,9 @@ consecutive heartbeats are automatically evicted from the totals.
 
 ## Global Counts
 
-| Method | Description |
-| --- | --- |
-| `GlobalClientCount()` | Total connected clients across all nodes |
+| Method                  | Description                              |
+| ----------------------- | ---------------------------------------- |
+| `GlobalClientCount()`   | Total connected clients across all nodes |
 | `GlobalRoomCount(room)` | Total clients in a room across all nodes |
 
 ```go

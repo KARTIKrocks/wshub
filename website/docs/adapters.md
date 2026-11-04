@@ -47,28 +47,28 @@ type Adapter interface {
 
 The wire format used for inter-node communication:
 
-| Field | Description |
-| --- | --- |
-| `NodeID` | Originating hub node (used for deduplication) |
-| `Type` | Operation type (broadcast, room, user, client, presence) |
-| `Room` | Target room name (for room-scoped operations) |
-| `UserID` | Target user (for `SendToUser`) |
-| `ClientID` | Target client (for `SendToClient`) |
-| `ExceptClientIDs` | Client IDs to exclude from delivery |
-| `MsgType` | WebSocket message type (text or binary) |
-| `Data` | Raw message payload |
+| Field             | Description                                              |
+| ----------------- | -------------------------------------------------------- |
+| `NodeID`          | Originating hub node (used for deduplication)            |
+| `Type`            | Operation type (broadcast, room, user, client, presence) |
+| `Room`            | Target room name (for room-scoped operations)            |
+| `UserID`          | Target user (for `SendToUser`)                           |
+| `ClientID`        | Target client (for `SendToClient`)                       |
+| `ExceptClientIDs` | Client IDs to exclude from delivery                      |
+| `MsgType`         | WebSocket message type (text or binary)                  |
+| `Data`            | Raw message payload                                      |
 
 Supported operation types:
 
-| Constant | Description |
-| --- | --- |
-| `AdapterBroadcast` | Broadcast to all clients |
-| `AdapterBroadcastExcept` | Broadcast excluding specific clients |
-| `AdapterRoom` | Broadcast to a room |
-| `AdapterRoomExcept` | Broadcast to a room excluding specific clients |
-| `AdapterUser` | Send to all connections of a user |
-| `AdapterClient` | Send to a specific client |
-| `AdapterPresence` | Presence heartbeat |
+| Constant                 | Description                                    |
+| ------------------------ | ---------------------------------------------- |
+| `AdapterBroadcast`       | Broadcast to all clients                       |
+| `AdapterBroadcastExcept` | Broadcast excluding specific clients           |
+| `AdapterRoom`            | Broadcast to a room                            |
+| `AdapterRoomExcept`      | Broadcast to a room excluding specific clients |
+| `AdapterUser`            | Send to all connections of a user              |
+| `AdapterClient`          | Send to a specific client                      |
+| `AdapterPresence`        | Presence heartbeat                             |
 
 ## Redis Adapter
 
@@ -129,10 +129,10 @@ go hub.Run()
 
 ## Adapter Options
 
-| Option | Description |
-| --- | --- |
-| `WithChannel(name)` | Redis only — Pub/Sub channel. Default `wshub:messages` |
-| `WithSubject(name)` | NATS only — subject. Default `wshub.messages` |
+| Option                          | Description                                                               |
+| ------------------------------- | ------------------------------------------------------------------------- |
+| `WithChannel(name)`             | Redis only — Pub/Sub channel. Default `wshub:messages`                    |
+| `WithSubject(name)`             | NATS only — subject. Default `wshub.messages`                             |
 | `WithUnmarshalErrorHandler(fn)` | Observe messages that fail JSON unmarshaling in the subscribe path _1.6+_ |
 
 _Added in 1.6._ A malformed payload on the bus — a stray publisher, a partial

@@ -42,11 +42,11 @@ hub := wshub.NewHub(wshub.WithMessageHandler(router.Handle))
 
 Use `On()` to register handlers for specific events. Calls can be chained:
 
-| Method | Description |
-| --- | --- |
-| `On(event, handler)` | Register a handler for the given event name |
+| Method                | Description                                                                             |
+| --------------------- | --------------------------------------------------------------------------------------- |
+| `On(event, handler)`  | Register a handler for the given event name                                             |
 | `OnNotFound(handler)` | Set a fallback handler for unmatched events (defaults to returning `ErrInvalidMessage`) |
-| `Handle(client, msg)` | Dispatch a message to the appropriate handler — pass to `WithMessageHandler` |
+| `Handle(client, msg)` | Dispatch a message to the appropriate handler — pass to `WithMessageHandler`            |
 
 ```go
 router.

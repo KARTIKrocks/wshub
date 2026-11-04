@@ -56,42 +56,42 @@ client, err := hub.UpgradeConnection(w, r, wshub.WithUserID("user-123"))
 
 ## Hub Options
 
-| Option | Description |
-| --- | --- |
-| `WithConfig(cfg)` | Set WebSocket configuration (buffer sizes, timeouts, compression) |
-| `WithLogger(l)` | Set a custom logger implementation |
-| `WithMetrics(m)` | Set a metrics collector |
-| `WithLimits(l)` | Set connection and rate limits |
-| `WithHooks(h)` | Set lifecycle hooks |
-| `WithMessageHandler(fn)` | Set the message handler function |
-| `WithParallelBroadcast(n)` | Enable parallel broadcasting with batch size n |
+| Option                            | Description                                                                                                                                                  |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `WithConfig(cfg)`                 | Set WebSocket configuration (buffer sizes, timeouts, compression)                                                                                            |
+| `WithLogger(l)`                   | Set a custom logger implementation                                                                                                                           |
+| `WithMetrics(m)`                  | Set a metrics collector                                                                                                                                      |
+| `WithLimits(l)`                   | Set connection and rate limits                                                                                                                               |
+| `WithHooks(h)`                    | Set lifecycle hooks                                                                                                                                          |
+| `WithMessageHandler(fn)`          | Set the message handler function                                                                                                                             |
+| `WithParallelBroadcast(n)`        | Enable parallel broadcasting with batch size n                                                                                                               |
 | `WithParallelBroadcastWorkers(n)` | Set the number of persistent worker goroutines for parallel broadcasting (default: `runtime.NumCPU()`). No effect unless `WithParallelBroadcast` is also set |
-| `WithAdapter(adapter)` | Set multi-node adapter for cross-node message delivery |
-| `WithNodeID(id)` | Set a stable node identifier for debugging (default: random UUID) |
-| `WithPresence(interval)` | Enable periodic presence gossip for global counts |
-| `WithHookTimeout(d)` | Max wait for synchronous hooks like `BeforeDisconnect` (default: 5s) |
-| `WithDropPolicy(policy)` | Set backpressure behaviour when the send buffer is full (`DropNewest` or `DropOldest`) |
-| `WithoutHandlerLatency()` | Disable built-in latency recording (use with `MetricsMiddleware` to avoid double-counting) |
-| `WithDrainTimeout(d)` | Max idle time before closing a connection during drain (default: 30s). Set to 0 to disable the idle reaper |
+| `WithAdapter(adapter)`            | Set multi-node adapter for cross-node message delivery                                                                                                       |
+| `WithNodeID(id)`                  | Set a stable node identifier for debugging (default: random UUID)                                                                                            |
+| `WithPresence(interval)`          | Enable periodic presence gossip for global counts                                                                                                            |
+| `WithHookTimeout(d)`              | Max wait for synchronous hooks like `BeforeDisconnect` (default: 5s)                                                                                         |
+| `WithDropPolicy(policy)`          | Set backpressure behaviour when the send buffer is full (`DropNewest` or `DropOldest`)                                                                       |
+| `WithoutHandlerLatency()`         | Disable built-in latency recording (use with `MetricsMiddleware` to avoid double-counting)                                                                   |
+| `WithDrainTimeout(d)`             | Max idle time before closing a connection during drain (default: 30s). Set to 0 to disable the idle reaper                                                   |
 
 ## Broadcasting
 
-| Method | Description |
-| --- | --- |
-| `Broadcast(data)` | Send text bytes to all connected clients |
-| `BroadcastText(text)` | Send a text string to all clients |
-| `BroadcastBinary(data)` | Send binary data to all clients |
-| `BroadcastJSON(v)` | JSON-encode and send to all clients |
-| `BroadcastRawJSON(data)` | Broadcast pre-serialized JSON bytes to all clients (0 allocs, skips marshaling) |
-| `BroadcastWithContext(ctx, data)` | Broadcast with context support |
-| `BroadcastExcept(data, except...)` | Send text to all except specified clients |
-| `BroadcastBinaryExcept(data, except...)` | Send binary to all except specified clients |
-| `SendToClient(clientID, data)` | Send text to a specific client by ID |
-| `SendBinaryToClient(clientID, data)` | Send binary to a specific client by ID |
-| `SendToClientWithContext(ctx, clientID, data)` | Send to client with context (blocks until enqueued) |
-| `SendToUser(userID, data)` | Send text to all connections of a user |
-| `SendBinaryToUser(userID, data)` | Send binary to all connections of a user |
-| `SendToUserWithContext(ctx, userID, data)` | Send to user with context (blocks until enqueued) |
+| Method                                         | Description                                                                     |
+| ---------------------------------------------- | ------------------------------------------------------------------------------- |
+| `Broadcast(data)`                              | Send text bytes to all connected clients                                        |
+| `BroadcastText(text)`                          | Send a text string to all clients                                               |
+| `BroadcastBinary(data)`                        | Send binary data to all clients                                                 |
+| `BroadcastJSON(v)`                             | JSON-encode and send to all clients                                             |
+| `BroadcastRawJSON(data)`                       | Broadcast pre-serialized JSON bytes to all clients (0 allocs, skips marshaling) |
+| `BroadcastWithContext(ctx, data)`              | Broadcast with context support                                                  |
+| `BroadcastExcept(data, except...)`             | Send text to all except specified clients                                       |
+| `BroadcastBinaryExcept(data, except...)`       | Send binary to all except specified clients                                     |
+| `SendToClient(clientID, data)`                 | Send text to a specific client by ID                                            |
+| `SendBinaryToClient(clientID, data)`           | Send binary to a specific client by ID                                          |
+| `SendToClientWithContext(ctx, clientID, data)` | Send to client with context (blocks until enqueued)                             |
+| `SendToUser(userID, data)`                     | Send text to all connections of a user                                          |
+| `SendBinaryToUser(userID, data)`               | Send binary to all connections of a user                                        |
+| `SendToUserWithContext(ctx, userID, data)`     | Send to user with context (blocks until enqueued)                               |
 
 ```go
 // Broadcast to all connected clients
@@ -109,14 +109,14 @@ hub.BroadcastExcept([]byte("hello others"), excludedClient1, excludedClient2)
 
 ## Client Lookup
 
-| Method | Description |
-| --- | --- |
-| `Clients()` | Get all connected clients |
-| `ClientCount()` | Get count of connected clients (atomic, no lock) |
-| `GetClient(id)` | O(1) client lookup by ID |
-| `GetClientByUserID(userID)` | Get first client for a user |
-| `GetClientsByUserID(userID)` | Get all connections for a user |
-| `NodeID()` | Get this hub's unique node identifier |
+| Method                       | Description                                      |
+| ---------------------------- | ------------------------------------------------ |
+| `Clients()`                  | Get all connected clients                        |
+| `ClientCount()`              | Get count of connected clients (atomic, no lock) |
+| `GetClient(id)`              | O(1) client lookup by ID                         |
+| `GetClientByUserID(userID)`  | Get first client for a user                      |
+| `GetClientsByUserID(userID)` | Get all connections for a user                   |
+| `NodeID()`                   | Get this hub's unique node identifier            |
 
 ```go
 // Look up clients
@@ -156,9 +156,9 @@ if err != nil {
 
 Control what happens when a client's send buffer is full:
 
-| Policy | Description |
-| --- | --- |
-| `DropNewest` | Discard the new message when the buffer is full (default) |
+| Policy       | Description                                                  |
+| ------------ | ------------------------------------------------------------ |
+| `DropNewest` | Discard the new message when the buffer is full (default)    |
 | `DropOldest` | Evict the oldest queued message to make room for the new one |
 
 ```go
@@ -178,14 +178,14 @@ hub := wshub.NewHub(
 Drop-in HTTP handlers for Kubernetes `/healthz` and `/readyz` probes, plus
 low-level accessors for building custom health logic.
 
-| Method | Description |
-| --- | --- |
-| `HealthHandler()` | Returns an `http.HandlerFunc` for `/healthz` — 200 when alive, 503 otherwise |
-| `ReadyHandler()` | Returns an `http.HandlerFunc` for `/readyz` — 200 when alive and `StateRunning`, 503 otherwise |
-| `Health()` | Returns a `HealthStatus` snapshot (all reads are lock-free atomic loads) |
-| `Alive()` | True while the `Run()` goroutine is executing |
-| `Ready()` | True when alive and in `StateRunning` (accepting connections) |
-| `Uptime()` | Elapsed time since `Run()` started; zero before start or after exit |
+| Method            | Description                                                                                    |
+| ----------------- | ---------------------------------------------------------------------------------------------- |
+| `HealthHandler()` | Returns an `http.HandlerFunc` for `/healthz` — 200 when alive, 503 otherwise                   |
+| `ReadyHandler()`  | Returns an `http.HandlerFunc` for `/readyz` — 200 when alive and `StateRunning`, 503 otherwise |
+| `Health()`        | Returns a `HealthStatus` snapshot (all reads are lock-free atomic loads)                       |
+| `Alive()`         | True while the `Run()` goroutine is executing                                                  |
+| `Ready()`         | True when alive and in `StateRunning` (accepting connections)                                  |
+| `Uptime()`        | Elapsed time since `Run()` started; zero before start or after exit                            |
 
 Both handlers respond with a JSON body containing `alive`, `ready`, `state`,
 `uptime_ns`, and `clients`.
@@ -214,12 +214,12 @@ Drain stops accepting new connections (HTTP 503) while letting existing
 connections finish in-flight messages. Designed for zero-downtime rolling
 deploys (Kubernetes `preStop`, SIGTERM handlers).
 
-| Method | Description |
-| --- | --- |
-| `Drain(ctx)` | Stop accepting connections and wait for existing ones to disconnect (or the context to expire) |
-| `State()` | Returns the current `HubState` (`StateRunning`, `StateDraining`, or `StateStopped`) |
-| `IsRunning()` | True when the hub is accepting new connections |
-| `IsDraining()` | True when the hub is draining (no new connections, existing ones finishing) |
+| Method         | Description                                                                                    |
+| -------------- | ---------------------------------------------------------------------------------------------- |
+| `Drain(ctx)`   | Stop accepting connections and wait for existing ones to disconnect (or the context to expire) |
+| `State()`      | Returns the current `HubState` (`StateRunning`, `StateDraining`, or `StateStopped`)            |
+| `IsRunning()`  | True when the hub is accepting new connections                                                 |
+| `IsDraining()` | True when the hub is draining (no new connections, existing ones finishing)                    |
 
 During drain, idle connections whose send buffers have been empty for the drain
 timeout (default 30s, configurable via `WithDrainTimeout`) are proactively
@@ -236,11 +236,11 @@ hub.Shutdown(ctx) // force-close anything remaining
 
 ### Hub State
 
-| State | Description |
-| --- | --- |
-| `StateRunning` | Accepting new connections and processing messages normally |
+| State           | Description                                                                      |
+| --------------- | -------------------------------------------------------------------------------- |
+| `StateRunning`  | Accepting new connections and processing messages normally                       |
 | `StateDraining` | No new connections (HTTP 503), existing connections finishing in-flight messages |
-| `StateStopped` | Hub shut down, all connections closed, `Run` loop exited |
+| `StateStopped`  | Hub shut down, all connections closed, `Run` loop exited                         |
 
 ```go
 // Health/readiness probes

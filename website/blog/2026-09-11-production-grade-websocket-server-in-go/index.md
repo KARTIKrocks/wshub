@@ -72,7 +72,7 @@ func (h *Hub) Broadcast(data []byte) {
 ```
 
 If one client's `send` channel is full, this blocks the whole broadcast — and
-since it's holding an `RLock`, it blocks every *other* goroutine trying to
+since it's holding an `RLock`, it blocks every _other_ goroutine trying to
 register or deregister a client, too. One slow client now stalls the entire
 hub. The fix is to take a **snapshot** of the client slice under the lock,
 then release the lock before touching any channel:
@@ -106,7 +106,7 @@ hub, because they go straight through the map, never through the snapshot.
   instance, a document's collaborators).
 - **Broadcast except** — everyone but the sender, so you don't echo a user's
   own message back to them.
-- **Send to user** — not a connection, a *user*, who may have three tabs
+- **Send to user** — not a connection, a _user_, who may have three tabs
   open and three separate `*Client`s. This needs its own index
   (`map[userID][]*Client`) alongside the connection map, because a user
   reconnecting on a fourth device shouldn't require touching every existing
@@ -145,14 +145,14 @@ func (c *Client) trySend(data []byte) {
 ```
 
 There are two reasonable policies, and the right one depends on what the
-message *means*:
+message _means_:
 
 - **Drop newest** (default) — discard the message that just arrived. Correct
   for append-only streams like chat, where losing the latest of several
   queued messages is recoverable.
 - **Drop oldest** — evict the head of the queue to make room. Correct for
   state-replacement streams — a live cursor position, a stock ticker, a
-  presence indicator — where only the *latest* value matters and an old one
+  presence indicator — where only the _latest_ value matters and an old one
   is actively wrong to deliver.
 
 Either way, silently dropping data is a bug waiting to be discovered in
@@ -195,10 +195,10 @@ of a visible blip every release.
 
 ## 6. Rate limiting protects the hub from its own clients
 
-Connection-level backpressure protects against slow *readers*. It does
+Connection-level backpressure protects against slow _readers_. It does
 nothing against a client — malicious or just buggy — that opens connections
 faster than you can process them, or floods messages at a rate no downstream
-consumer can absorb. That needs limits enforced *before* the expensive part
+consumer can absorb. That needs limits enforced _before_ the expensive part
 of the pipeline runs:
 
 - **Max total connections** — a hard ceiling on hub size, so a runaway client
@@ -210,7 +210,7 @@ of the pipeline runs:
   client subscribing to every room turns every room broadcast into a
   full broadcast.
 
-The critical detail is *when* the user-ID limit gets checked. If a client can
+The critical detail is _when_ the user-ID limit gets checked. If a client can
 exist unauthenticated and get a user ID assigned afterward, there's a window
 where `MaxConnectionsPerUser` simply doesn't apply to it. Assigning the user
 ID atomically as part of the upgrade — not as a second step after the
@@ -241,7 +241,7 @@ five-minute diagnosis instead of a two-hour one.
 
 Eventually one machine's connection count or CPU is the ceiling, and you need
 a second node. This is where a WebSocket server's statefulness bites: unlike
-a stateless HTTP API, `SendToUser("alice", ...)` only works if *this* process
+a stateless HTTP API, `SendToUser("alice", ...)` only works if _this_ process
 holds Alice's connection. If your load balancer routed her to node B and the
 message originated on node A, a naive multi-node deployment silently drops
 it.
@@ -259,7 +259,7 @@ type Adapter interface {
 
 Every broadcast and targeted send publishes to the bus in addition to
 delivering locally, and every node subscribes and re-delivers to whichever of
-*its own* local connections match the target. Two details make this correct
+_its own_ local connections match the target. Two details make this correct
 rather than merely functional:
 
 - **Node-ID deduplication.** Without tagging each published message with its
@@ -278,7 +278,7 @@ optional, since not every deployment needs it and gossip has its own cost.
 ## What this adds up to
 
 None of these eight problems is individually hard. What makes a WebSocket
-server "production-grade" is that all eight have to be solved *together*, and
+server "production-grade" is that all eight have to be solved _together_, and
 several of them interact — backpressure policy changes what a slow client
 during drain looks like; rate limiting has to compose with the upgrade path's
 atomicity; the adapter layer has to respect the same non-blocking guarantee

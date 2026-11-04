@@ -21,8 +21,8 @@ This is article three in a series on production-grade WebSocket servers in
 Go — [article one](/blog/production-grade-websocket-server-in-go) listed the
 eight problems production traffic surfaces, [article two](/blog/handling-10000-websocket-connections-in-go)
 went deep on connection-scaling arithmetic. This one is about the mechanism
-that's easy to get *approximately* right and surprisingly easy to get
-*exactly* wrong: dropping messages under load without dropping correctness
+that's easy to get _approximately_ right and surprisingly easy to get
+_exactly_ wrong: dropping messages under load without dropping correctness
 along with them. The code below is from [wshub](https://github.com/KARTIKrocks/wshub)'s
 actual send path, not a simplified sketch — the races it guards against are
 the reason the "obvious" implementation isn't the one that shipped.
@@ -76,7 +76,7 @@ recover from gracefully by checking state first, because there's no atomic
 
 wshub's actual send path still does the `closed` check — as a fast-path
 optimization, to skip the panic/recover machinery for the common case where
-a client is already known to be gone — but it doesn't *trust* that check.
+a client is already known to be gone — but it doesn't _trust_ that check.
 Every send is wrapped in a `recover`:
 
 ```go
@@ -103,7 +103,7 @@ func isChanSendPanic(r any) bool {
 ```
 
 The re-panic on anything else is the important part of this design, not an
-afterthought. A `recover` that swallows *every* panic turns real bugs — a
+afterthought. A `recover` that swallows _every_ panic turns real bugs — a
 nil pointer dereference two calls deep in a message handler, an index out
 of range in application code — into silent, undebuggable message drops.
 Matching the specific panic string and re-panicking on everything else means
@@ -158,7 +158,7 @@ func (h *Hub) trySendDropOldest(client *Client, item sendItem) bool {
 }
 ```
 
-The mutex only has to serialize *this* path against *itself* — the
+The mutex only has to serialize _this_ path against _itself_ — the
 non-blocking fast path everywhere else still runs lock-free, so `DropNewest`
 (the default) pays none of this cost, and `DropOldest` pays it only on the
 buffer-full path, not on every send. That's the actual tradeoff `DropOldest`
@@ -173,16 +173,16 @@ up if that races."
 Given the two policies work at different cost, it's tempting to treat
 `DropNewest` as the "cheap" default and `DropOldest` as an opt-in for when
 you need it. That's true, but it's not the deciding factor — the deciding
-factor is what a dropped message *means* for your protocol:
+factor is what a dropped message _means_ for your protocol:
 
 - **`DropNewest`** is correct for append-only streams — chat messages, log
   lines, discrete events — where every message is independently meaningful
   and losing the newest of several queued ones is recoverable; the client
   still gets a consistent, if incomplete, history.
 - **`DropOldest`** is correct for state-replacement streams — a live cursor
-  position, a stock price, a presence indicator — where only the *current*
+  position, a stock price, a presence indicator — where only the _current_
   value matters and delivering a stale one is actively wrong. Here, dropping
-  the *new* message under `DropNewest` would mean showing the client
+  the _new_ message under `DropNewest` would mean showing the client
   outdated state for longer, which is worse than showing it fewer updates.
 
 Get this backwards — `DropOldest` on a chat feed, say — and you get subtly
@@ -221,7 +221,7 @@ Three separate outlets, and each earns its place:
 
 Worth knowing before you rely on it in production: that log line is not
 rate-limited. It's a distinct code path from wshub's handshake-failure
-logging, which *is* explicitly rate-limited — because a failed handshake is
+logging, which _is_ explicitly rate-limited — because a failed handshake is
 something an unauthenticated client can trigger for free — while a message
 drop only happens for a client the hub has already accepted and is actively
 serving. That's a reasonable place to draw the line, but it also means a
